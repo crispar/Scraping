@@ -1,506 +1,968 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="ko">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Web Content Extractor</title>
-    <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; }
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="44+ 웹사이트에서 콘텐츠를 추출합니다. URL을 입력하면 기사 내용을 바로 확인하고 복사할 수 있습니다.">
+  <title>Content Extractor</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg-primary: #0a0a0f;
+      --bg-secondary: #12121a;
+      --bg-card: rgba(255,255,255,0.04);
+      --bg-card-hover: rgba(255,255,255,0.07);
+      --bg-glass: rgba(255,255,255,0.06);
+      --bg-glass-border: rgba(255,255,255,0.1);
+      --text-primary: #f0f0f5;
+      --text-secondary: #8b8b9e;
+      --text-muted: #5a5a6e;
+      --accent-1: #7c5cfc;
+      --accent-2: #c084fc;
+      --accent-3: #e879f9;
+      --accent-gradient: linear-gradient(135deg, var(--accent-1), var(--accent-2), var(--accent-3));
+      --red: #f87171;
+      --green: #4ade80;
+      --border-subtle: rgba(255,255,255,0.08);
+      --border-light: rgba(255,255,255,0.12);
+      --radius-sm: 8px;
+      --radius-md: 12px;
+      --radius-lg: 16px;
+      --radius-xl: 24px;
+      --radius-full: 9999px;
+      --shadow-lg: 0 8px 32px rgba(0,0,0,0.5);
+      --shadow-glow: 0 0 40px rgba(124,92,252,0.15);
+      --transition-fast: 150ms cubic-bezier(0.4,0,0.2,1);
+      --transition-base: 250ms cubic-bezier(0.4,0,0.2,1);
+    }
 
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            background: #0F1923;
-            color: #E0E8F0;
-            min-height: 100vh;
-        }
+    *, *::before, *::after { margin:0; padding:0; box-sizing:border-box; }
 
-        .header {
-            background: #1A2735;
-            border-bottom: 1px solid #2A3A4A;
-            padding: 16px 24px;
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-        }
+    html {
+      font-size: 16px;
+      scroll-behavior: smooth;
+      -webkit-font-smoothing: antialiased;
+    }
 
-        .header h1 {
-            font-size: 20px;
-            font-weight: 600;
-            color: #F0F4F8;
-        }
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: var(--bg-primary);
+      color: var(--text-primary);
+      min-height: 100vh;
+      line-height: 1.6;
+      overflow-x: hidden;
+    }
 
-        .header .badge {
-            background: #1B3A2D;
-            color: #4ADE80;
-            padding: 4px 12px;
-            border-radius: 12px;
-            font-size: 12px;
-            font-weight: 500;
-        }
+    body::before, body::after {
+      content: '';
+      position: fixed;
+      border-radius: 50%;
+      filter: blur(120px);
+      opacity: 0.4;
+      pointer-events: none;
+      z-index: 0;
+    }
+    body::before {
+      width: 600px; height: 600px;
+      background: radial-gradient(circle, rgba(124,92,252,0.15), transparent 70%);
+      top: -200px; right: -200px;
+    }
+    body::after {
+      width: 500px; height: 500px;
+      background: radial-gradient(circle, rgba(232,121,249,0.1), transparent 70%);
+      bottom: -150px; left: -150px;
+    }
 
-        .main {
-            max-width: 1200px;
-            margin: 0 auto;
-            padding: 24px;
-        }
+    .app {
+      position: relative;
+      z-index: 1;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
 
-        .input-section {
-            background: #1A2735;
-            border: 1px solid #2A3A4A;
-            border-radius: 12px;
-            padding: 24px;
-            margin-bottom: 20px;
-        }
+    [hidden] { display: none !important; }
 
-        .input-section label {
-            display: block;
-            font-size: 13px;
-            color: #8899AA;
-            margin-bottom: 8px;
-            font-weight: 500;
-        }
+    /* ── Header ─────────────────────────────────── */
+    .header {
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      background: rgba(10,10,15,0.8);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      border-bottom: 1px solid var(--border-subtle);
+    }
+    .header__inner {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 16px 24px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .header__logo {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      text-decoration: none;
+      color: var(--text-primary);
+    }
+    .header__logo-icon {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 36px; height: 36px;
+      background: var(--accent-gradient);
+      border-radius: var(--radius-sm);
+      font-size: 14px;
+      color: white;
+    }
+    .header__logo-text {
+      font-size: 1.125rem;
+      font-weight: 600;
+      letter-spacing: -0.02em;
+    }
+    .header__logo-accent {
+      background: var(--accent-gradient);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+    .header__badge {
+      display: inline-flex;
+      align-items: center;
+      padding: 2px 12px;
+      font-size: 0.75rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      border-radius: var(--radius-full);
+      background: rgba(74,222,128,0.1);
+      color: var(--green);
+      border: 1px solid rgba(74,222,128,0.3);
+    }
 
-        .input-row {
-            display: flex;
-            gap: 12px;
-        }
+    /* ── Hero / Search Section ──────────────────── */
+    .hero {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 45vh;
+      padding: 64px 24px;
+    }
+    .hero__content {
+      max-width: 720px;
+      width: 100%;
+      text-align: center;
+      animation: fadeInUp 0.6s var(--transition-base);
+    }
+    .hero__title {
+      font-size: 3.5rem;
+      font-weight: 700;
+      line-height: 1.15;
+      letter-spacing: -0.03em;
+      margin-bottom: 24px;
+    }
+    .hero__title-gradient {
+      background: var(--accent-gradient);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+    .hero__subtitle {
+      font-size: 1.125rem;
+      color: var(--text-secondary);
+      max-width: 560px;
+      margin: 0 auto 48px;
+      line-height: 1.7;
+    }
 
-        .input-row input {
-            flex: 1;
-            background: #0F1923;
-            border: 1px solid #2A3A4A;
-            border-radius: 8px;
-            padding: 12px 16px;
-            color: #E0E8F0;
-            font-size: 14px;
-            outline: none;
-            transition: border-color 0.2s;
-        }
+    /* ── Search Form ────────────────────────────── */
+    .search-form { width: 100%; }
+    .search-form__input-wrapper {
+      display: flex;
+      align-items: center;
+      background: var(--bg-glass);
+      border: 1px solid var(--bg-glass-border);
+      border-radius: var(--radius-xl);
+      padding: 8px;
+      transition: border-color var(--transition-base), box-shadow var(--transition-base);
+    }
+    .search-form__input-wrapper:focus-within {
+      border-color: var(--accent-1);
+      box-shadow: var(--shadow-glow);
+    }
+    .search-form__icon {
+      flex-shrink: 0;
+      width: 22px; height: 22px;
+      margin-left: 16px;
+      color: var(--text-muted);
+    }
+    .search-form__input {
+      flex: 1;
+      background: none;
+      border: none;
+      outline: none;
+      color: var(--text-primary);
+      font-family: inherit;
+      font-size: 1rem;
+      padding: 16px;
+      min-width: 0;
+    }
+    .search-form__input::placeholder { color: var(--text-muted); }
+    .search-form__btn {
+      flex-shrink: 0;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      background: var(--accent-gradient);
+      color: white;
+      border: none;
+      border-radius: var(--radius-lg);
+      padding: 16px 32px;
+      font-family: inherit;
+      font-size: 0.875rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: transform var(--transition-fast), box-shadow var(--transition-base);
+      white-space: nowrap;
+    }
+    .search-form__btn:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 4px 20px rgba(124,92,252,0.4);
+    }
+    .search-form__btn:active { transform: translateY(0); }
+    .search-form__btn:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+      transform: none;
+      box-shadow: none;
+    }
+    .search-form__btn-arrow {
+      width: 16px; height: 16px;
+      transition: transform var(--transition-fast);
+    }
+    .search-form__btn:hover .search-form__btn-arrow { transform: translateX(3px); }
+    .search-form__hint {
+      margin-top: 16px;
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      min-height: 24px;
+    }
+    .platform-tag {
+      display: none;
+      padding: 2px 10px;
+      font-size: 0.75rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      border-radius: var(--radius-full);
+      background: rgba(124,92,252,0.15);
+      color: var(--accent-2);
+      border: 1px solid rgba(124,92,252,0.3);
+    }
 
-        .input-row input:focus {
-            border-color: #137FEC;
-        }
+    /* ── Loading Section ────────────────────────── */
+    .loading-section {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 64px 24px;
+      animation: fadeIn 0.3s ease-out;
+    }
+    .loading-spinner {
+      position: relative;
+      width: 64px; height: 64px;
+    }
+    .loading-spinner__ring {
+      position: absolute;
+      inset: 0;
+      border: 3px solid transparent;
+      border-radius: 50%;
+    }
+    .loading-spinner__ring:nth-child(1) {
+      border-top-color: var(--accent-1);
+      animation: spin 1s linear infinite;
+    }
+    .loading-spinner__ring:nth-child(2) {
+      inset: 6px;
+      border-right-color: var(--accent-2);
+      animation: spin 1.5s linear infinite reverse;
+    }
+    .loading-spinner__ring:nth-child(3) {
+      inset: 12px;
+      border-bottom-color: var(--accent-3);
+      animation: spin 2s linear infinite;
+    }
+    .loading-text {
+      margin-top: 24px;
+      color: var(--text-secondary);
+      font-size: 0.875rem;
+      animation: pulse 1.5s ease-in-out infinite;
+    }
 
-        .input-row input::placeholder {
-            color: #556677;
-        }
+    /* ── Error Section ──────────────────────────── */
+    .error-section {
+      display: flex;
+      justify-content: center;
+      padding: 64px 24px;
+      animation: fadeIn 0.3s ease-out;
+    }
+    .error-card {
+      max-width: 480px;
+      width: 100%;
+      text-align: center;
+      background: var(--bg-card);
+      border: 1px solid rgba(248,113,113,0.2);
+      border-radius: var(--radius-lg);
+      padding: 48px;
+    }
+    .error-card__icon { font-size: 48px; margin-bottom: 16px; }
+    .error-card__title {
+      font-size: 1.5rem;
+      font-weight: 600;
+      color: var(--red);
+      margin-bottom: 8px;
+    }
+    .error-card__message {
+      color: var(--text-secondary);
+      font-size: 0.875rem;
+      line-height: 1.7;
+      margin-bottom: 24px;
+    }
+    .error-card__btn {
+      background: rgba(248,113,113,0.15);
+      color: var(--red);
+      border: 1px solid rgba(248,113,113,0.3);
+      border-radius: var(--radius-sm);
+      padding: 8px 32px;
+      font-family: inherit;
+      font-size: 0.875rem;
+      font-weight: 500;
+      cursor: pointer;
+      transition: background var(--transition-fast);
+    }
+    .error-card__btn:hover { background: rgba(248,113,113,0.25); }
 
-        .btn {
-            padding: 12px 24px;
-            border: none;
-            border-radius: 8px;
-            font-size: 14px;
-            font-weight: 600;
-            cursor: pointer;
-            transition: background 0.2s, transform 0.1s;
-        }
+    /* ── Result Section ─────────────────────────── */
+    .result-section {
+      max-width: 960px;
+      margin: 0 auto;
+      padding: 24px;
+      width: 100%;
+      animation: fadeInUp 0.4s ease-out;
+    }
+    .result-nav { margin-bottom: 16px; }
+    .back-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 8px 16px;
+      font-family: inherit;
+      font-size: 0.875rem;
+      font-weight: 500;
+      color: var(--text-secondary);
+      background: var(--bg-glass);
+      border: 1px solid var(--border-light);
+      border-radius: var(--radius-sm);
+      cursor: pointer;
+      transition: all var(--transition-fast);
+      white-space: nowrap;
+    }
+    .back-btn:hover {
+      color: var(--text-primary);
+      background: var(--bg-card-hover);
+      border-color: var(--accent-1);
+    }
+    .back-btn:hover svg { transform: translateX(-2px); }
+    .back-btn svg { flex-shrink: 0; transition: transform var(--transition-fast); }
 
-        .btn:active { transform: scale(0.97); }
+    .result-header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 16px;
+      margin-bottom: 24px;
+      flex-wrap: wrap;
+    }
+    .result-header__title {
+      font-size: 1.5rem;
+      font-weight: 600;
+      margin-bottom: 8px;
+      word-break: break-word;
+    }
+    .result-header__meta {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    .result-header__badge {
+      display: inline-flex;
+      align-items: center;
+      padding: 2px 10px;
+      font-size: 0.75rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      border-radius: var(--radius-full);
+      background: rgba(124,92,252,0.15);
+      color: var(--accent-2);
+      border: 1px solid rgba(124,92,252,0.3);
+    }
+    .result-header__badge--success {
+      background: rgba(74,222,128,0.1);
+      color: var(--green);
+      border-color: rgba(74,222,128,0.3);
+    }
+    .result-header__count {
+      font-size: 0.75rem;
+      color: var(--text-muted);
+    }
+    .result-header__actions {
+      display: flex;
+      gap: 8px;
+      flex-shrink: 0;
+    }
 
-        .btn-primary {
-            background: #137FEC;
-            color: white;
-        }
+    /* ── Action Buttons ─────────────────────────── */
+    .action-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 8px 16px;
+      font-family: inherit;
+      font-size: 0.875rem;
+      font-weight: 500;
+      border: 1px solid var(--border-light);
+      border-radius: var(--radius-sm);
+      background: var(--bg-glass);
+      color: var(--text-primary);
+      cursor: pointer;
+      transition: all var(--transition-fast);
+      white-space: nowrap;
+    }
+    .action-btn:hover {
+      background: var(--bg-card-hover);
+      border-color: var(--accent-1);
+    }
+    .action-btn--copy.copied {
+      border-color: var(--green);
+      color: var(--green);
+    }
 
-        .btn-primary:hover { background: #2A8CF2; }
+    /* ── Tabs ───────────────────────────────────── */
+    .result-tabs {
+      display: flex;
+      gap: 4px;
+      margin-bottom: 16px;
+      background: var(--bg-card);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-md);
+      padding: 4px;
+    }
+    .tab-btn {
+      flex: 1;
+      padding: 10px 20px;
+      background: none;
+      border: none;
+      color: var(--text-muted);
+      font-family: inherit;
+      font-size: 0.875rem;
+      font-weight: 500;
+      cursor: pointer;
+      border-radius: var(--radius-sm);
+      transition: all var(--transition-fast);
+    }
+    .tab-btn.active {
+      background: rgba(124,92,252,0.15);
+      color: var(--accent-2);
+    }
+    .tab-btn:hover:not(.active) { color: var(--text-secondary); }
 
-        .btn-primary:disabled {
-            background: #2A3643;
-            color: #556677;
-            cursor: not-allowed;
-            transform: none;
-        }
+    /* ── Content Viewer ─────────────────────────── */
+    .tab-content { display: none; }
+    .tab-content.active { display: block; }
 
-        .btn-danger {
-            background: #EF4444;
-            color: white;
-        }
+    .content-viewer {
+      background: var(--bg-card);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-lg);
+      overflow: hidden;
+    }
 
-        .btn-danger:hover { background: #F87171; }
+    .result-text {
+      width: 100%;
+      min-height: 500px;
+      background: transparent;
+      color: var(--text-primary);
+      border: none;
+      padding: 24px;
+      font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+      font-size: 0.8125rem;
+      line-height: 1.8;
+      resize: vertical;
+      outline: none;
+    }
+    .result-text::placeholder { color: var(--text-muted); }
 
-        .status-bar {
-            display: flex;
-            align-items: center;
-            gap: 12px;
-            margin-top: 12px;
-            font-size: 13px;
-            color: #8899AA;
-            min-height: 24px;
-        }
+    .result-json {
+      width: 100%;
+      min-height: 500px;
+      background: transparent;
+      color: var(--text-primary);
+      border: none;
+      padding: 24px;
+      font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+      font-size: 0.8125rem;
+      line-height: 1.7;
+      resize: vertical;
+      outline: none;
+      white-space: pre-wrap;
+      overflow-y: auto;
+    }
 
-        .status-bar .platform-tag {
-            background: #1B2E4A;
-            color: #60A5FA;
-            padding: 2px 10px;
-            border-radius: 6px;
-            font-size: 12px;
-            font-weight: 500;
-        }
+    .content-viewer::-webkit-scrollbar { width: 6px; }
+    .content-viewer::-webkit-scrollbar-track { background: transparent; }
+    .content-viewer::-webkit-scrollbar-thumb { background: var(--text-muted); border-radius: 3px; }
 
-        .spinner {
-            display: none;
-            width: 16px;
-            height: 16px;
-            border: 2px solid #2A3A4A;
-            border-top-color: #137FEC;
-            border-radius: 50%;
-            animation: spin 0.8s linear infinite;
-        }
+    /* ── Info Grid ──────────────────────────────── */
+    .info-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 16px;
+      padding: 24px;
+    }
+    .info-item {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      padding: 16px;
+      background: rgba(255,255,255,0.02);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-sm);
+    }
+    .info-item .label {
+      font-size: 0.6875rem;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      font-weight: 600;
+    }
+    .info-item .value {
+      font-size: 0.875rem;
+      color: var(--text-primary);
+      word-break: break-word;
+      line-height: 1.5;
+    }
 
-        @keyframes spin { to { transform: rotate(360deg); } }
+    /* ── Footer ─────────────────────────────────── */
+    .footer {
+      margin-top: auto;
+      padding: 32px 24px;
+      text-align: center;
+      border-top: 1px solid var(--border-subtle);
+    }
+    .footer__text {
+      font-size: 0.75rem;
+      color: var(--text-muted);
+    }
 
-        .result-section {
-            background: #1A2735;
-            border: 1px solid #2A3A4A;
-            border-radius: 12px;
-            overflow: hidden;
-        }
+    /* ── Toast ──────────────────────────────────── */
+    .toast {
+      position: fixed;
+      bottom: 32px;
+      left: 50%;
+      transform: translateX(-50%) translateY(20px);
+      background: var(--bg-secondary);
+      border: 1px solid var(--border-light);
+      border-radius: var(--radius-sm);
+      padding: 8px 24px;
+      box-shadow: var(--shadow-lg);
+      z-index: 200;
+      opacity: 0;
+      transition: all var(--transition-base);
+      pointer-events: none;
+    }
+    .toast.visible {
+      opacity: 1;
+      transform: translateX(-50%) translateY(0);
+    }
+    .toast__message {
+      font-size: 0.875rem;
+      color: var(--text-primary);
+    }
 
-        .result-header {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            padding: 16px 24px;
-            border-bottom: 1px solid #2A3A4A;
-        }
+    /* ── Animations ─────────────────────────────── */
+    @keyframes fadeIn { from { opacity:0 } to { opacity:1 } }
+    @keyframes fadeInUp { from { opacity:0; transform:translateY(20px) } to { opacity:1; transform:translateY(0) } }
+    @keyframes spin { to { transform:rotate(360deg) } }
+    @keyframes pulse { 0%,100% { opacity:1 } 50% { opacity:0.5 } }
 
-        .result-header h2 {
-            font-size: 15px;
-            font-weight: 600;
-            color: #C0CCD8;
-        }
-
-        .result-meta {
-            font-size: 12px;
-            color: #667788;
-        }
-
-        .result-tabs {
-            display: flex;
-            border-bottom: 1px solid #2A3A4A;
-        }
-
-        .tab-btn {
-            padding: 10px 20px;
-            background: none;
-            border: none;
-            color: #667788;
-            font-size: 13px;
-            cursor: pointer;
-            border-bottom: 2px solid transparent;
-            transition: color 0.2s, border-color 0.2s;
-        }
-
-        .tab-btn.active {
-            color: #137FEC;
-            border-bottom-color: #137FEC;
-        }
-
-        .tab-btn:hover {
-            color: #A0B0C0;
-        }
-
-        .tab-content {
-            display: none;
-            padding: 0;
-        }
-
-        .tab-content.active {
-            display: block;
-        }
-
-        .result-text {
-            width: 100%;
-            min-height: 500px;
-            background: #0F1923;
-            color: #D0D8E0;
-            border: none;
-            padding: 20px 24px;
-            font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
-            font-size: 13px;
-            line-height: 1.7;
-            resize: vertical;
-            outline: none;
-        }
-
-        .result-json {
-            width: 100%;
-            min-height: 500px;
-            background: #0F1923;
-            color: #D0D8E0;
-            border: none;
-            padding: 20px 24px;
-            font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
-            font-size: 13px;
-            line-height: 1.6;
-            resize: vertical;
-            outline: none;
-            white-space: pre-wrap;
-        }
-
-        .footer {
-            text-align: center;
-            padding: 20px;
-            color: #445566;
-            font-size: 12px;
-        }
-
-        .info-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-            gap: 12px;
-            padding: 20px 24px;
-            background: #0F1923;
-        }
-
-        .info-item {
-            display: flex;
-            flex-direction: column;
-            gap: 4px;
-        }
-
-        .info-item .label {
-            font-size: 11px;
-            color: #667788;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-        }
-
-        .info-item .value {
-            font-size: 14px;
-            color: #C0CCD8;
-            word-break: break-word;
-        }
-
-        @media (max-width: 768px) {
-            .main { padding: 16px; }
-            .input-row { flex-direction: column; }
-            .info-grid { grid-template-columns: 1fr; }
-        }
-    </style>
+    /* ── Responsive ─────────────────────────────── */
+    @media (max-width: 768px) {
+      .hero__title { font-size: 2rem; }
+      .hero__subtitle { font-size: 1rem; }
+      .hero { min-height: 35vh; padding: 48px 16px; }
+      .search-form__input-wrapper { flex-wrap: wrap; }
+      .search-form__btn { width: 100%; justify-content: center; margin-top: 4px; }
+      .search-form__icon { display: none; }
+      .result-header { flex-direction: column; }
+      .result-header__actions { width: 100%; }
+      .result-section { padding: 16px; }
+      .info-grid { grid-template-columns: 1fr; }
+    }
+    @media (max-width: 480px) {
+      .hero__title { font-size: 1.6rem; }
+      .header__logo-text { font-size: 1rem; }
+      .action-btn span { display: none; }
+      .action-btn { padding: 8px; }
+    }
+  </style>
 </head>
 <body>
-    <div class="header">
-        <h1>Web Content Extractor</h1>
-        <span class="badge">{{ parsers|length }} Parsers</span>
-    </div>
+  <div class="app">
+    <!-- Header -->
+    <header class="header">
+      <div class="header__inner">
+        <a href="/" class="header__logo">
+          <span class="header__logo-icon">E</span>
+          <span class="header__logo-text">Content<span class="header__logo-accent">Extractor</span></span>
+        </a>
+        <span class="header__badge">{{ parsers|length }} Parsers</span>
+      </div>
+    </header>
 
-    <div class="main">
-        <div class="input-section">
-            <label for="url-input">Enter URL to extract content</label>
-            <div class="input-row">
-                <input type="text" id="url-input" placeholder="https://example.com/article..." autocomplete="off">
-                <button class="btn btn-primary" id="extract-btn" onclick="startExtraction()">Extract</button>
-                <button class="btn btn-danger" id="clear-btn" onclick="clearResults()">Clear</button>
+    <main>
+      <!-- Hero / Search -->
+      <section class="hero" id="hero-section">
+        <div class="hero__content">
+          <h1 class="hero__title">
+            웹 콘텐츠를<br>
+            <span class="hero__title-gradient">쉽고 빠르게 추출하세요</span>
+          </h1>
+          <p class="hero__subtitle">
+            URL을 입력하면 {{ parsers|length }}+ 웹사이트에서 기사 내용을 바로 확인하고 복사할 수 있습니다.
+          </p>
+
+          <form class="search-form" id="search-form" onsubmit="return false;">
+            <div class="search-form__input-wrapper">
+              <svg class="search-form__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/>
+                <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>
+              </svg>
+              <input type="text" id="url-input" class="search-form__input"
+                placeholder="https://example.com/article... URL을 붙여넣으세요"
+                autocomplete="off" spellcheck="false">
+              <button type="submit" class="search-form__btn" id="extract-btn" onclick="startExtraction()">
+                <span>추출하기</span>
+                <svg class="search-form__btn-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16">
+                  <line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/>
+                </svg>
+              </button>
             </div>
-            <div class="status-bar">
-                <div class="spinner" id="spinner"></div>
-                <span id="status-text">Ready to extract content</span>
-                <span class="platform-tag" id="platform-tag" style="display:none"></span>
+            <div class="search-form__hint">
+              <span id="status-text">Reddit, TechCrunch, Naver 등 {{ parsers|length }}+ 플랫폼 지원</span>
+              <span class="platform-tag" id="platform-tag"></span>
             </div>
+          </form>
+        </div>
+      </section>
+
+      <!-- Loading State -->
+      <section class="loading-section" id="loading-section" hidden>
+        <div class="loading-spinner">
+          <div class="loading-spinner__ring"></div>
+          <div class="loading-spinner__ring"></div>
+          <div class="loading-spinner__ring"></div>
+        </div>
+        <p class="loading-text" id="loading-text">콘텐츠를 추출하고 있습니다...</p>
+      </section>
+
+      <!-- Error State -->
+      <section class="error-section" id="error-section" hidden>
+        <div class="error-card">
+          <div class="error-card__icon">!</div>
+          <h2 class="error-card__title" id="error-title">추출 실패</h2>
+          <p class="error-card__message" id="error-message">알 수 없는 오류가 발생했습니다.</p>
+          <button class="error-card__btn" id="error-retry-btn" onclick="goBack()">다시 시도</button>
+        </div>
+      </section>
+
+      <!-- Result Section -->
+      <section class="result-section" id="result-section" hidden>
+        <div class="result-nav">
+          <button class="back-btn" onclick="goBack()">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16">
+              <line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/>
+            </svg>
+            새 URL 추출
+          </button>
         </div>
 
-        <div class="result-section">
-            <div class="result-header">
-                <h2>Extraction Result</h2>
-                <span class="result-meta" id="char-count">Characters: 0</span>
+        <div class="result-header">
+          <div class="result-header__info">
+            <h2 class="result-header__title" id="result-title">Extraction Result</h2>
+            <div class="result-header__meta">
+              <span class="result-header__badge" id="result-platform-badge">GENERIC</span>
+              <span class="result-header__badge result-header__badge--success" id="result-status-badge">SUCCESS</span>
+              <span class="result-header__count" id="result-char-count">0 characters</span>
             </div>
-            <div class="result-tabs">
-                <button class="tab-btn active" onclick="switchTab('formatted')">Formatted</button>
-                <button class="tab-btn" onclick="switchTab('json')">JSON</button>
-                <button class="tab-btn" onclick="switchTab('info')">Info</button>
-            </div>
-            <div class="tab-content active" id="tab-formatted">
-                <textarea class="result-text" id="result-text" readonly placeholder="Extracted content will appear here..."></textarea>
-            </div>
-            <div class="tab-content" id="tab-json">
-                <pre class="result-json" id="result-json">No data yet.</pre>
-            </div>
-            <div class="tab-content" id="tab-info">
-                <div class="info-grid" id="info-grid">
-                    <div class="info-item">
-                        <span class="label">Title</span>
-                        <span class="value" id="info-title">-</span>
-                    </div>
-                    <div class="info-item">
-                        <span class="label">Author</span>
-                        <span class="value" id="info-author">-</span>
-                    </div>
-                    <div class="info-item">
-                        <span class="label">Date</span>
-                        <span class="value" id="info-date">-</span>
-                    </div>
-                    <div class="info-item">
-                        <span class="label">Parser</span>
-                        <span class="value" id="info-parser">-</span>
-                    </div>
-                    <div class="info-item">
-                        <span class="label">Status</span>
-                        <span class="value" id="info-status">-</span>
-                    </div>
-                    <div class="info-item">
-                        <span class="label">URL</span>
-                        <span class="value" id="info-url">-</span>
-                    </div>
-                </div>
-            </div>
+          </div>
+          <div class="result-header__actions">
+            <button class="action-btn action-btn--copy" id="copy-btn" onclick="copyContent()" title="클립보드에 복사">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18">
+                <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
+                <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+              </svg>
+              <span>Copy</span>
+            </button>
+          </div>
         </div>
-    </div>
 
-    <div class="footer">
-        Web Content Extractor v2.0 &mdash; Supports {{ parsers|length }}+ platforms
-    </div>
+        <!-- Tabs -->
+        <div class="result-tabs">
+          <button class="tab-btn active" onclick="switchTab('formatted', this)">Formatted</button>
+          <button class="tab-btn" onclick="switchTab('json', this)">JSON</button>
+          <button class="tab-btn" onclick="switchTab('info', this)">Info</button>
+        </div>
 
-    <script>
-        const urlInput = document.getElementById('url-input');
-        const extractBtn = document.getElementById('extract-btn');
-        const spinner = document.getElementById('spinner');
-        const statusText = document.getElementById('status-text');
-        const platformTag = document.getElementById('platform-tag');
-        const resultText = document.getElementById('result-text');
-        const resultJson = document.getElementById('result-json');
-        const charCount = document.getElementById('char-count');
+        <!-- Tab Contents -->
+        <div class="content-viewer">
+          <div class="tab-content active" id="tab-formatted">
+            <textarea class="result-text" id="result-text" readonly placeholder="추출된 콘텐츠가 여기에 표시됩니다..."></textarea>
+          </div>
+          <div class="tab-content" id="tab-json">
+            <pre class="result-json" id="result-json">No data yet.</pre>
+          </div>
+          <div class="tab-content" id="tab-info">
+            <div class="info-grid" id="info-grid">
+              <div class="info-item">
+                <span class="label">Title</span>
+                <span class="value" id="info-title">-</span>
+              </div>
+              <div class="info-item">
+                <span class="label">Author</span>
+                <span class="value" id="info-author">-</span>
+              </div>
+              <div class="info-item">
+                <span class="label">Date</span>
+                <span class="value" id="info-date">-</span>
+              </div>
+              <div class="info-item">
+                <span class="label">Parser</span>
+                <span class="value" id="info-parser">-</span>
+              </div>
+              <div class="info-item">
+                <span class="label">Status</span>
+                <span class="value" id="info-status">-</span>
+              </div>
+              <div class="info-item">
+                <span class="label">URL</span>
+                <span class="value" id="info-url">-</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
 
-        let isExtracting = false;
+    <!-- Footer -->
+    <footer class="footer">
+      <p class="footer__text">{{ parsers|length }}+ 플랫폼에서 공개 콘텐츠를 추출합니다. 저작권은 원작자에게 있습니다.</p>
+    </footer>
+  </div>
 
-        // Auto-detect platform on URL input
-        let detectTimer = null;
-        urlInput.addEventListener('input', function() {
-            clearTimeout(detectTimer);
-            const url = this.value.trim();
-            if (url && (url.startsWith('http://') || url.startsWith('https://'))) {
-                detectTimer = setTimeout(() => detectPlatform(url), 500);
-            } else {
-                platformTag.style.display = 'none';
-            }
+  <!-- Toast -->
+  <div class="toast" id="toast" hidden>
+    <span class="toast__message" id="toast-message"></span>
+  </div>
+
+  <script>
+    const urlInput = document.getElementById('url-input');
+    const extractBtn = document.getElementById('extract-btn');
+    const statusText = document.getElementById('status-text');
+    const platformTag = document.getElementById('platform-tag');
+    const resultText = document.getElementById('result-text');
+    const resultJson = document.getElementById('result-json');
+
+    const heroSection = document.getElementById('hero-section');
+    const loadingSection = document.getElementById('loading-section');
+    const errorSection = document.getElementById('error-section');
+    const resultSection = document.getElementById('result-section');
+
+    let isExtracting = false;
+
+    // Show only the given section
+    function showSection(section) {
+      [heroSection, loadingSection, errorSection, resultSection].forEach(s => s.hidden = true);
+      section.hidden = false;
+    }
+
+    // Go back to hero
+    function goBack() {
+      showSection(heroSection);
+      urlInput.focus();
+    }
+
+    // Auto-detect platform on URL input
+    let detectTimer = null;
+    urlInput.addEventListener('input', function() {
+      clearTimeout(detectTimer);
+      const url = this.value.trim();
+      if (url && (url.startsWith('http://') || url.startsWith('https://'))) {
+        detectTimer = setTimeout(() => detectPlatform(url), 500);
+      } else {
+        platformTag.style.display = 'none';
+      }
+    });
+
+    urlInput.addEventListener('keydown', function(e) {
+      if (e.key === 'Enter' && !isExtracting) startExtraction();
+    });
+
+    async function detectPlatform(url) {
+      try {
+        const resp = await fetch('/api/detect', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ url })
         });
+        if (resp.ok) {
+          const data = await resp.json();
+          platformTag.textContent = data.platform;
+          platformTag.style.display = 'inline';
+        }
+      } catch (e) { /* ignore */ }
+    }
 
-        // Enter key triggers extraction
-        urlInput.addEventListener('keydown', function(e) {
-            if (e.key === 'Enter' && !isExtracting) {
-                startExtraction();
-            }
+    async function startExtraction() {
+      const url = urlInput.value.trim();
+      if (!url) { showToast('URL을 입력해주세요'); return; }
+      if (!url.startsWith('http://') && !url.startsWith('https://')) {
+        showToast('URL은 http:// 또는 https://로 시작해야 합니다');
+        return;
+      }
+      if (isExtracting) return;
+      isExtracting = true;
+      extractBtn.disabled = true;
+
+      // Show loading
+      showSection(loadingSection);
+      document.getElementById('loading-text').textContent = '플랫폼을 감지하고 있습니다...';
+
+      try {
+        // Detect platform
+        const detectResp = await fetch('/api/detect', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ url })
         });
-
-        async function detectPlatform(url) {
-            try {
-                const resp = await fetch('/api/detect', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ url: url })
-                });
-                if (resp.ok) {
-                    const data = await resp.json();
-                    platformTag.textContent = data.platform;
-                    platformTag.style.display = 'inline';
-                }
-            } catch (e) {
-                // Ignore detection errors
-            }
+        const detectData = await detectResp.json();
+        if (detectResp.ok) {
+          document.getElementById('loading-text').textContent =
+            `${detectData.platform} 감지됨. 콘텐츠를 추출하고 있습니다...`;
         }
 
-        async function startExtraction() {
-            const url = urlInput.value.trim();
-            if (!url) {
-                statusText.textContent = 'Please enter a URL';
-                return;
-            }
+        // Extract content
+        const extractResp = await fetch('/api/extract', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ url })
+        });
+        const data = await extractResp.json();
 
-            if (!url.startsWith('http://') && !url.startsWith('https://')) {
-                statusText.textContent = 'URL must start with http:// or https://';
-                return;
-            }
+        if (data.success) {
+          // Populate result
+          resultText.value = data.formatted_text || '';
+          resultJson.textContent = JSON.stringify(data.result, null, 2);
 
-            if (isExtracting) return;
-            isExtracting = true;
+          const r = data.result || {};
+          document.getElementById('result-title').textContent = r.title || 'Untitled';
+          document.getElementById('result-platform-badge').textContent = (data.platform || 'generic').toUpperCase();
+          document.getElementById('result-status-badge').textContent = 'SUCCESS';
+          document.getElementById('result-status-badge').className = 'result-header__badge result-header__badge--success';
+          document.getElementById('result-char-count').textContent =
+            `${(data.formatted_text || '').length.toLocaleString()} characters`;
 
-            // UI state
-            extractBtn.disabled = true;
-            spinner.style.display = 'block';
-            statusText.textContent = 'Detecting platform...';
-            resultText.value = '';
-            charCount.textContent = 'Characters: 0';
+          document.getElementById('info-title').textContent = r.title || '-';
+          document.getElementById('info-author').textContent = r.author || '-';
+          document.getElementById('info-date').textContent = r.date || '-';
+          document.getElementById('info-parser').textContent = r.parser || '-';
+          document.getElementById('info-status').textContent = r.status || '-';
+          document.getElementById('info-url').textContent = r.url || '-';
 
-            try {
-                // Detect platform first
-                const detectResp = await fetch('/api/detect', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ url: url })
-                });
-                const detectData = await detectResp.json();
-                if (detectResp.ok) {
-                    platformTag.textContent = detectData.platform;
-                    platformTag.style.display = 'inline';
-                    statusText.textContent = `Detected platform: ${detectData.platform}. Extracting content...`;
-                }
-
-                // Extract content
-                const extractResp = await fetch('/api/extract', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ url: url })
-                });
-                const data = await extractResp.json();
-
-                if (data.success) {
-                    resultText.value = data.formatted_text || '';
-                    statusText.textContent = 'Extraction completed successfully!';
-                } else {
-                    resultText.value = data.formatted_text || data.message || 'Extraction failed.';
-                    statusText.textContent = data.message || 'Extraction failed';
-                }
-
-                // Update JSON tab
-                resultJson.textContent = JSON.stringify(data.result, null, 2);
-
-                // Update info tab
-                if (data.result) {
-                    const r = data.result;
-                    document.getElementById('info-title').textContent = r.title || '-';
-                    document.getElementById('info-author').textContent = r.author || '-';
-                    document.getElementById('info-date').textContent = r.date || '-';
-                    document.getElementById('info-parser').textContent = r.parser || '-';
-                    document.getElementById('info-status').textContent = r.status || '-';
-                    document.getElementById('info-url').textContent = r.url || '-';
-                }
-
-                // Update char count
-                const text = resultText.value;
-                charCount.textContent = `Characters: ${text.length.toLocaleString()}`;
-
-            } catch (e) {
-                statusText.textContent = `Error: ${e.message}`;
-                resultText.value = `Error: ${e.message}`;
-            } finally {
-                isExtracting = false;
-                extractBtn.disabled = false;
-                spinner.style.display = 'none';
-            }
+          // Reset to formatted tab
+          switchTab('formatted', document.querySelector('.tab-btn'));
+          showSection(resultSection);
+        } else {
+          document.getElementById('error-title').textContent = '추출 실패';
+          document.getElementById('error-message').textContent = data.message || '콘텐츠를 추출할 수 없습니다.';
+          showSection(errorSection);
         }
+      } catch (e) {
+        document.getElementById('error-title').textContent = '연결 오류';
+        document.getElementById('error-message').textContent = e.message;
+        showSection(errorSection);
+      } finally {
+        isExtracting = false;
+        extractBtn.disabled = false;
+      }
+    }
 
-        function clearResults() {
-            urlInput.value = '';
-            resultText.value = '';
-            resultJson.textContent = 'No data yet.';
-            statusText.textContent = 'Ready to extract content';
-            platformTag.style.display = 'none';
-            charCount.textContent = 'Characters: 0';
-            document.getElementById('info-title').textContent = '-';
-            document.getElementById('info-author').textContent = '-';
-            document.getElementById('info-date').textContent = '-';
-            document.getElementById('info-parser').textContent = '-';
-            document.getElementById('info-status').textContent = '-';
-            document.getElementById('info-url').textContent = '-';
-        }
+    function switchTab(tabName, clickedBtn) {
+      document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+      document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+      if (clickedBtn) clickedBtn.classList.add('active');
+      else document.querySelector('.tab-btn').classList.add('active');
+      document.getElementById('tab-' + tabName).classList.add('active');
+    }
 
-        function switchTab(tabName) {
-            document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
-            document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
+    function copyContent() {
+      const copyBtn = document.getElementById('copy-btn');
+      let text = '';
 
-            event.target.classList.add('active');
-            document.getElementById('tab-' + tabName).classList.add('active');
-        }
-    </script>
+      const activeTab = document.querySelector('.tab-content.active');
+      if (activeTab.id === 'tab-formatted') {
+        text = resultText.value;
+      } else if (activeTab.id === 'tab-json') {
+        text = resultJson.textContent;
+      } else if (activeTab.id === 'tab-info') {
+        const items = activeTab.querySelectorAll('.info-item');
+        text = Array.from(items).map(item => {
+          const label = item.querySelector('.label').textContent;
+          const value = item.querySelector('.value').textContent;
+          return `${label}: ${value}`;
+        }).join('\n');
+      }
+
+      if (!text || text === 'No data yet.') return;
+
+      navigator.clipboard.writeText(text).then(() => {
+        copyBtn.classList.add('copied');
+        showToast('클립보드에 복사되었습니다');
+        setTimeout(() => copyBtn.classList.remove('copied'), 2000);
+      });
+    }
+
+    function showToast(message) {
+      const toast = document.getElementById('toast');
+      document.getElementById('toast-message').textContent = message;
+      toast.hidden = false;
+      requestAnimationFrame(() => toast.classList.add('visible'));
+      setTimeout(() => {
+        toast.classList.remove('visible');
+        setTimeout(() => toast.hidden = true, 300);
+      }, 2500);
+    }
+  </script>
 </body>
 </html>
