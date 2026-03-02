@@ -1,0 +1,506 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Web Content Extractor</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #0F1923;
+            color: #E0E8F0;
+            min-height: 100vh;
+        }
+
+        .header {
+            background: #1A2735;
+            border-bottom: 1px solid #2A3A4A;
+            padding: 16px 24px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .header h1 {
+            font-size: 20px;
+            font-weight: 600;
+            color: #F0F4F8;
+        }
+
+        .header .badge {
+            background: #1B3A2D;
+            color: #4ADE80;
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: 500;
+        }
+
+        .main {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 24px;
+        }
+
+        .input-section {
+            background: #1A2735;
+            border: 1px solid #2A3A4A;
+            border-radius: 12px;
+            padding: 24px;
+            margin-bottom: 20px;
+        }
+
+        .input-section label {
+            display: block;
+            font-size: 13px;
+            color: #8899AA;
+            margin-bottom: 8px;
+            font-weight: 500;
+        }
+
+        .input-row {
+            display: flex;
+            gap: 12px;
+        }
+
+        .input-row input {
+            flex: 1;
+            background: #0F1923;
+            border: 1px solid #2A3A4A;
+            border-radius: 8px;
+            padding: 12px 16px;
+            color: #E0E8F0;
+            font-size: 14px;
+            outline: none;
+            transition: border-color 0.2s;
+        }
+
+        .input-row input:focus {
+            border-color: #137FEC;
+        }
+
+        .input-row input::placeholder {
+            color: #556677;
+        }
+
+        .btn {
+            padding: 12px 24px;
+            border: none;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background 0.2s, transform 0.1s;
+        }
+
+        .btn:active { transform: scale(0.97); }
+
+        .btn-primary {
+            background: #137FEC;
+            color: white;
+        }
+
+        .btn-primary:hover { background: #2A8CF2; }
+
+        .btn-primary:disabled {
+            background: #2A3643;
+            color: #556677;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .btn-danger {
+            background: #EF4444;
+            color: white;
+        }
+
+        .btn-danger:hover { background: #F87171; }
+
+        .status-bar {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-top: 12px;
+            font-size: 13px;
+            color: #8899AA;
+            min-height: 24px;
+        }
+
+        .status-bar .platform-tag {
+            background: #1B2E4A;
+            color: #60A5FA;
+            padding: 2px 10px;
+            border-radius: 6px;
+            font-size: 12px;
+            font-weight: 500;
+        }
+
+        .spinner {
+            display: none;
+            width: 16px;
+            height: 16px;
+            border: 2px solid #2A3A4A;
+            border-top-color: #137FEC;
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+        }
+
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        .result-section {
+            background: #1A2735;
+            border: 1px solid #2A3A4A;
+            border-radius: 12px;
+            overflow: hidden;
+        }
+
+        .result-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 16px 24px;
+            border-bottom: 1px solid #2A3A4A;
+        }
+
+        .result-header h2 {
+            font-size: 15px;
+            font-weight: 600;
+            color: #C0CCD8;
+        }
+
+        .result-meta {
+            font-size: 12px;
+            color: #667788;
+        }
+
+        .result-tabs {
+            display: flex;
+            border-bottom: 1px solid #2A3A4A;
+        }
+
+        .tab-btn {
+            padding: 10px 20px;
+            background: none;
+            border: none;
+            color: #667788;
+            font-size: 13px;
+            cursor: pointer;
+            border-bottom: 2px solid transparent;
+            transition: color 0.2s, border-color 0.2s;
+        }
+
+        .tab-btn.active {
+            color: #137FEC;
+            border-bottom-color: #137FEC;
+        }
+
+        .tab-btn:hover {
+            color: #A0B0C0;
+        }
+
+        .tab-content {
+            display: none;
+            padding: 0;
+        }
+
+        .tab-content.active {
+            display: block;
+        }
+
+        .result-text {
+            width: 100%;
+            min-height: 500px;
+            background: #0F1923;
+            color: #D0D8E0;
+            border: none;
+            padding: 20px 24px;
+            font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+            font-size: 13px;
+            line-height: 1.7;
+            resize: vertical;
+            outline: none;
+        }
+
+        .result-json {
+            width: 100%;
+            min-height: 500px;
+            background: #0F1923;
+            color: #D0D8E0;
+            border: none;
+            padding: 20px 24px;
+            font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+            font-size: 13px;
+            line-height: 1.6;
+            resize: vertical;
+            outline: none;
+            white-space: pre-wrap;
+        }
+
+        .footer {
+            text-align: center;
+            padding: 20px;
+            color: #445566;
+            font-size: 12px;
+        }
+
+        .info-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 12px;
+            padding: 20px 24px;
+            background: #0F1923;
+        }
+
+        .info-item {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+
+        .info-item .label {
+            font-size: 11px;
+            color: #667788;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .info-item .value {
+            font-size: 14px;
+            color: #C0CCD8;
+            word-break: break-word;
+        }
+
+        @media (max-width: 768px) {
+            .main { padding: 16px; }
+            .input-row { flex-direction: column; }
+            .info-grid { grid-template-columns: 1fr; }
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>Web Content Extractor</h1>
+        <span class="badge">{{ parsers|length }} Parsers</span>
+    </div>
+
+    <div class="main">
+        <div class="input-section">
+            <label for="url-input">Enter URL to extract content</label>
+            <div class="input-row">
+                <input type="text" id="url-input" placeholder="https://example.com/article..." autocomplete="off">
+                <button class="btn btn-primary" id="extract-btn" onclick="startExtraction()">Extract</button>
+                <button class="btn btn-danger" id="clear-btn" onclick="clearResults()">Clear</button>
+            </div>
+            <div class="status-bar">
+                <div class="spinner" id="spinner"></div>
+                <span id="status-text">Ready to extract content</span>
+                <span class="platform-tag" id="platform-tag" style="display:none"></span>
+            </div>
+        </div>
+
+        <div class="result-section">
+            <div class="result-header">
+                <h2>Extraction Result</h2>
+                <span class="result-meta" id="char-count">Characters: 0</span>
+            </div>
+            <div class="result-tabs">
+                <button class="tab-btn active" onclick="switchTab('formatted')">Formatted</button>
+                <button class="tab-btn" onclick="switchTab('json')">JSON</button>
+                <button class="tab-btn" onclick="switchTab('info')">Info</button>
+            </div>
+            <div class="tab-content active" id="tab-formatted">
+                <textarea class="result-text" id="result-text" readonly placeholder="Extracted content will appear here..."></textarea>
+            </div>
+            <div class="tab-content" id="tab-json">
+                <pre class="result-json" id="result-json">No data yet.</pre>
+            </div>
+            <div class="tab-content" id="tab-info">
+                <div class="info-grid" id="info-grid">
+                    <div class="info-item">
+                        <span class="label">Title</span>
+                        <span class="value" id="info-title">-</span>
+                    </div>
+                    <div class="info-item">
+                        <span class="label">Author</span>
+                        <span class="value" id="info-author">-</span>
+                    </div>
+                    <div class="info-item">
+                        <span class="label">Date</span>
+                        <span class="value" id="info-date">-</span>
+                    </div>
+                    <div class="info-item">
+                        <span class="label">Parser</span>
+                        <span class="value" id="info-parser">-</span>
+                    </div>
+                    <div class="info-item">
+                        <span class="label">Status</span>
+                        <span class="value" id="info-status">-</span>
+                    </div>
+                    <div class="info-item">
+                        <span class="label">URL</span>
+                        <span class="value" id="info-url">-</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="footer">
+        Web Content Extractor v2.0 &mdash; Supports {{ parsers|length }}+ platforms
+    </div>
+
+    <script>
+        const urlInput = document.getElementById('url-input');
+        const extractBtn = document.getElementById('extract-btn');
+        const spinner = document.getElementById('spinner');
+        const statusText = document.getElementById('status-text');
+        const platformTag = document.getElementById('platform-tag');
+        const resultText = document.getElementById('result-text');
+        const resultJson = document.getElementById('result-json');
+        const charCount = document.getElementById('char-count');
+
+        let isExtracting = false;
+
+        // Auto-detect platform on URL input
+        let detectTimer = null;
+        urlInput.addEventListener('input', function() {
+            clearTimeout(detectTimer);
+            const url = this.value.trim();
+            if (url && (url.startsWith('http://') || url.startsWith('https://'))) {
+                detectTimer = setTimeout(() => detectPlatform(url), 500);
+            } else {
+                platformTag.style.display = 'none';
+            }
+        });
+
+        // Enter key triggers extraction
+        urlInput.addEventListener('keydown', function(e) {
+            if (e.key === 'Enter' && !isExtracting) {
+                startExtraction();
+            }
+        });
+
+        async function detectPlatform(url) {
+            try {
+                const resp = await fetch('/api/detect', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ url: url })
+                });
+                if (resp.ok) {
+                    const data = await resp.json();
+                    platformTag.textContent = data.platform;
+                    platformTag.style.display = 'inline';
+                }
+            } catch (e) {
+                // Ignore detection errors
+            }
+        }
+
+        async function startExtraction() {
+            const url = urlInput.value.trim();
+            if (!url) {
+                statusText.textContent = 'Please enter a URL';
+                return;
+            }
+
+            if (!url.startsWith('http://') && !url.startsWith('https://')) {
+                statusText.textContent = 'URL must start with http:// or https://';
+                return;
+            }
+
+            if (isExtracting) return;
+            isExtracting = true;
+
+            // UI state
+            extractBtn.disabled = true;
+            spinner.style.display = 'block';
+            statusText.textContent = 'Detecting platform...';
+            resultText.value = '';
+            charCount.textContent = 'Characters: 0';
+
+            try {
+                // Detect platform first
+                const detectResp = await fetch('/api/detect', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ url: url })
+                });
+                const detectData = await detectResp.json();
+                if (detectResp.ok) {
+                    platformTag.textContent = detectData.platform;
+                    platformTag.style.display = 'inline';
+                    statusText.textContent = `Detected platform: ${detectData.platform}. Extracting content...`;
+                }
+
+                // Extract content
+                const extractResp = await fetch('/api/extract', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ url: url })
+                });
+                const data = await extractResp.json();
+
+                if (data.success) {
+                    resultText.value = data.formatted_text || '';
+                    statusText.textContent = 'Extraction completed successfully!';
+                } else {
+                    resultText.value = data.formatted_text || data.message || 'Extraction failed.';
+                    statusText.textContent = data.message || 'Extraction failed';
+                }
+
+                // Update JSON tab
+                resultJson.textContent = JSON.stringify(data.result, null, 2);
+
+                // Update info tab
+                if (data.result) {
+                    const r = data.result;
+                    document.getElementById('info-title').textContent = r.title || '-';
+                    document.getElementById('info-author').textContent = r.author || '-';
+                    document.getElementById('info-date').textContent = r.date || '-';
+                    document.getElementById('info-parser').textContent = r.parser || '-';
+                    document.getElementById('info-status').textContent = r.status || '-';
+                    document.getElementById('info-url').textContent = r.url || '-';
+                }
+
+                // Update char count
+                const text = resultText.value;
+                charCount.textContent = `Characters: ${text.length.toLocaleString()}`;
+
+            } catch (e) {
+                statusText.textContent = `Error: ${e.message}`;
+                resultText.value = `Error: ${e.message}`;
+            } finally {
+                isExtracting = false;
+                extractBtn.disabled = false;
+                spinner.style.display = 'none';
+            }
+        }
+
+        function clearResults() {
+            urlInput.value = '';
+            resultText.value = '';
+            resultJson.textContent = 'No data yet.';
+            statusText.textContent = 'Ready to extract content';
+            platformTag.style.display = 'none';
+            charCount.textContent = 'Characters: 0';
+            document.getElementById('info-title').textContent = '-';
+            document.getElementById('info-author').textContent = '-';
+            document.getElementById('info-date').textContent = '-';
+            document.getElementById('info-parser').textContent = '-';
+            document.getElementById('info-status').textContent = '-';
+            document.getElementById('info-url').textContent = '-';
+        }
+
+        function switchTab(tabName) {
+            document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+            document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
+
+            event.target.classList.add('active');
+            document.getElementById('tab-' + tabName).classList.add('active');
+        }
+    </script>
+</body>
+</html>

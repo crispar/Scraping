@@ -1,0 +1,17 @@
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+dist/
+build/
+*.egg-info/
+*.spec
+gui_app.py
+nginx/ssl/
+.git/
+.claude/
+tests/
+scripts/
+logs/
+parsed_*/
