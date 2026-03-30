@@ -138,6 +138,7 @@ class ModernButton(tk.Canvas):
 class CrawlerGUI:
     def __init__(self, root):
         self.root = root
+        self.root.withdraw()  # Hide window during UI construction to prevent flickering
         self.root.title("Content Extractor - Desktop Pro")
         self.root.geometry("1160x780")
         self.root.minsize(980, 640)
@@ -156,6 +157,21 @@ class CrawlerGUI:
 
         self._configure_styles()
         self.setup_ui()
+
+        # Finalize all pending layout calculations, then show the fully-rendered window
+        self.root.update_idletasks()
+        self._center_window()
+        self.root.deiconify()
+
+    def _center_window(self):
+        """Center the window on screen after layout is finalized."""
+        w = self.root.winfo_width()
+        h = self.root.winfo_height()
+        sw = self.root.winfo_screenwidth()
+        sh = self.root.winfo_screenheight()
+        x = (sw - w) // 2
+        y = (sh - h) // 2
+        self.root.geometry(f"{w}x{h}+{x}+{y}")
 
     def _on_window_close(self):
         self.view_model.on_property_changed = lambda _prop: None
