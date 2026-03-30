@@ -160,6 +160,103 @@ class TestExtractionResult:
         assert result.platform == 'samaltman'
 
 
+class TestFrontendBugFixes:
+    """Verify fixes for flickering and URL persistence bugs in index.html"""
+
+    def test_index_page_contains_goBack_with_resetState(self, client):
+        """goBack() must call resetState() to clear previous URL and results"""
+        response = client.get('/')
+        html = response.data.decode('utf-8')
+        assert 'function resetState()' in html, "resetState() function must exist"
+        assert 'function goBack()' in html, "goBack() function must exist"
+        # goBack must call resetState
+        goback_start = html.find('function goBack()')
+        goback_body = html[goback_start:html.find('\n    }', goback_start) + 6]
+        assert 'resetState()' in goback_body, "goBack() must call resetState()"
+
+    def test_resetState_clears_url_input(self, client):
+        """resetState() must clear the URL input field"""
+        response = client.get('/')
+        html = response.data.decode('utf-8')
+        reset_start = html.find('function resetState()')
+        reset_end = html.find('\n    }', reset_start) + 6
+        reset_body = html[reset_start:reset_end]
+        assert "urlInput.value = ''" in reset_body, "resetState must clear urlInput"
+
+    def test_resetState_clears_platform_tag(self, client):
+        """resetState() must hide the platform detection tag"""
+        response = client.get('/')
+        html = response.data.decode('utf-8')
+        reset_start = html.find('function resetState()')
+        reset_end = html.find('\n    }', reset_start) + 6
+        reset_body = html[reset_start:reset_end]
+        assert "platformTag.style.display = 'none'" in reset_body
+
+    def test_resetState_clears_result_data(self, client):
+        """resetState() must clear all result fields"""
+        response = client.get('/')
+        html = response.data.decode('utf-8')
+        reset_start = html.find('function resetState()')
+        reset_end = html.find('\n    }', reset_start) + 6
+        reset_body = html[reset_start:reset_end]
+        assert "resultText.value = ''" in reset_body
+        assert "resultJson.textContent = 'No data yet.'" in reset_body
+
+    def test_resetState_clears_info_fields(self, client):
+        """resetState() must reset all info grid fields"""
+        response = client.get('/')
+        html = response.data.decode('utf-8')
+        for field in ['info-title', 'info-author', 'info-date',
+                      'info-parser', 'info-status', 'info-url']:
+            assert f"getElementById('{field}').textContent = '-'" in html, \
+                f"resetState must reset {field}"
+
+    def test_hero_animation_only_on_initial_load(self, client):
+        """hero__content animation must only play on initial load, not on goBack()"""
+        response = client.get('/')
+        html = response.data.decode('utf-8')
+        # Initial HTML has the animation class
+        assert 'hero__content hero__content--initial' in html, \
+            "hero__content must have --initial class for first load animation"
+        # goBack removes the animation class to prevent flicker
+        assert "classList.remove('hero__content--initial')" in html, \
+            "goBack must remove animation class to prevent re-triggering"
+        # Static .hero__content should NOT have animation
+        assert '.hero__content {' in html
+        # The animation should only be on the --initial modifier
+        assert '.hero__content--initial' in html
+
+    def test_hero_content_no_static_animation(self, client):
+        """The base .hero__content class must not have animation property"""
+        response = client.get('/')
+        html = response.data.decode('utf-8')
+        # Find .hero__content CSS block (not --initial)
+        hero_css_start = html.find('.hero__content {')
+        hero_css_end = html.find('}', hero_css_start) + 1
+        hero_css = html[hero_css_start:hero_css_end]
+        assert 'animation' not in hero_css, \
+            "Base .hero__content must not have animation (causes flicker on goBack)"
+
+    def test_error_retry_uses_separate_function(self, client):
+        """Error retry button must use retryFromError(), not goBack()"""
+        response = client.get('/')
+        html = response.data.decode('utf-8')
+        assert 'function retryFromError()' in html, \
+            "retryFromError() function must exist"
+        assert 'onclick="retryFromError()"' in html, \
+            "Error retry button must call retryFromError()"
+
+    def test_error_retry_preserves_url(self, client):
+        """retryFromError() must NOT clear the URL (user wants to retry same URL)"""
+        response = client.get('/')
+        html = response.data.decode('utf-8')
+        retry_start = html.find('function retryFromError()')
+        retry_end = html.find('\n    }', retry_start) + 6
+        retry_body = html[retry_start:retry_end]
+        assert 'resetState' not in retry_body, \
+            "retryFromError must NOT call resetState (preserves URL for retry)"
+
+
 class TestServiceIntegrity:
     """Verify CrawlerService behavior matches ParserFactory"""
 
