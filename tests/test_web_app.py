@@ -1,6 +1,7 @@
 """Test cases for the Flask web application"""
 
 import json
+import time
 import pytest
 from web_app import create_app
 from crawler.factory import ParserFactory
@@ -86,19 +87,81 @@ class TestExtraction:
         response = client.post('/api/extract', json={'url': 'not-a-url'})
         assert response.status_code == 400
 
-    def test_extract_returns_proper_structure(self, client):
-        response = client.post('/api/extract', json={
-            'url': 'https://blog.samaltman.com/how-to-invest-in-startups'
-        })
-        assert response.status_code == 200
-        data = json.loads(response.data)
+    @pytest.fixture
+    def stub_service(self, monkeypatch):
+        """추출기를 고정 결과로 대체 — 네트워크 없이 API 계약만 검증한다."""
+        def fake_extract(self, url):
+            return ExtractionResult(
+                success=True,
+                message="Extraction completed successfully!",
+                formatted_text="Title: T\nURL: " + url + "\nContent:\nbody",
+                raw_result={
+                    'url': url, 'title': 'T', 'author': 'A', 'date': 'D',
+                    'content': 'body', 'status': 'success',
+                },
+                platform='generic',
+            )
+        monkeypatch.setattr(CrawlerService, 'extract_content', fake_extract)
+
+    @staticmethod
+    def _assert_result_structure(data):
         assert 'success' in data
         assert 'platform' in data
         assert 'result' in data
         if data['success']:
             result = data['result']
-            for key in ('title', 'content', 'author', 'url'):
+            for key in ('title', 'content', 'author', 'date', 'url'):
                 assert key in result
+
+    @staticmethod
+    def _poll(client, job_id, attempts=50):
+        """비동기 작업이 끝날 때까지 폴링 (백그라운드 스레드 완료 대기)."""
+        for _ in range(attempts):
+            response = client.get(f'/api/extract/result/{job_id}')
+            assert response.status_code == 200
+            data = json.loads(response.data)
+            if data['status'] != 'pending':
+                return data
+            time.sleep(0.05)
+        pytest.fail(f"job {job_id} did not finish in time")
+
+    def test_extract_sync_returns_proper_structure(self, client, stub_service):
+        """sync=true 하위호환 경로는 예전처럼 200 + 결과를 바로 돌려준다."""
+        response = client.post('/api/extract', json={
+            'url': 'https://example.com/post', 'sync': True,
+        })
+        assert response.status_code == 200
+        self._assert_result_structure(json.loads(response.data))
+
+    def test_extract_async_returns_job_then_result(self, client, stub_service):
+        """기본 경로는 202 + job_id 를 주고, 폴링으로 같은 구조의 결과를 받는다."""
+        response = client.post('/api/extract', json={'url': 'https://example.com/post'})
+        assert response.status_code == 202
+        job = json.loads(response.data)
+        assert job['status'] == 'pending'
+        assert job['job_id']
+
+        data = self._poll(client, job['job_id'])
+        assert data['status'] == 'done'
+        self._assert_result_structure(data)
+        assert data['result']['url'] == 'https://example.com/post'
+
+    def test_extract_async_reports_failure(self, client, monkeypatch):
+        """추출 중 예외가 나면 job 이 error 상태로 마감돼야 한다 (무한 pending 금지)."""
+        def boom(self, url):
+            raise RuntimeError('extractor exploded')
+        monkeypatch.setattr(CrawlerService, 'extract_content', boom)
+
+        response = client.post('/api/extract', json={'url': 'https://example.com/post'})
+        assert response.status_code == 202
+        data = self._poll(client, json.loads(response.data)['job_id'])
+        assert data['status'] == 'error'
+        assert 'extractor exploded' in data['message']
+
+    def test_extract_result_unknown_job(self, client):
+        response = client.get('/api/extract/result/does-not-exist')
+        assert response.status_code == 404
+        assert json.loads(response.data)['status'] == 'not_found'
 
 
 class TestURLValidator:
@@ -151,6 +214,7 @@ class TestExtractionResult:
         assert result.platform == 'generic'
         assert result.raw_result['status'] == 'success'
 
+    @pytest.mark.network
     def test_service_returns_extraction_result(self):
         service = CrawlerService()
         result = service.extract_content('https://blog.samaltman.com/how-to-invest-in-startups')
