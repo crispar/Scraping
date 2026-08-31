@@ -96,15 +96,81 @@ class NaverBlogParser(BaseParser):
         Returns:
             포맷팅된 문자열
         """
-        lines = []
-        lines.append(f"Title: {result.get('title', 'N/A')}")
-        lines.append(f"Author: {result.get('author', 'N/A')}")
-        lines.append(f"Date: {result.get('date', 'N/A')}")
-        lines.append(f"Category: {result.get('category', 'N/A')}")
+        lines = self.build_header_lines(
+            result,
+            extra_lines=[f"Category: {result.get('category') or 'N/A'}"],
+        )
         lines.append("\n" + "=" * 80 + "\n")
         lines.append("Content:\n")
-        lines.append(result.get('content', 'N/A'))
+        lines.append(result.get('content') or 'N/A')
         return "\n".join(lines)
+
+    def _select_text(self, soup: BeautifulSoup, selectors: List[str]) -> Optional[str]:
+        """선택자 목록을 우선순위대로 훑어 첫 번째로 나오는 텍스트 반환."""
+        for selector in selectors:
+            element = soup.select_one(selector)
+            if element:
+                text = element.get_text(strip=True)
+                if text:
+                    return text
+        return None
+
+    def extract_title(self, soup: BeautifulSoup) -> str:
+        """
+        포스트 제목 추출
+
+        <title> 태그는 '<제목> : 네이버 블로그' 형태라 꼬리표를 떼어내야 한다.
+        """
+        title = self._select_text(soup, NaverBlogConstants.TITLE_SELECTORS)
+        if title:
+            return title
+
+        og_title = soup.find('meta', {'property': 'og:title'})
+        if og_title and og_title.get('content', '').strip():
+            return og_title['content'].strip()
+
+        title_tag = soup.find('title')
+        if not title_tag:
+            return "제목 없음"
+        text = re.sub(NaverBlogConstants.TITLE_SUFFIX_PATTERN, '',
+                      title_tag.get_text(strip=True))
+        return text.strip() or "제목 없음"
+
+    def extract_author(self, soup: BeautifulSoup, url: str) -> Optional[str]:
+        """
+        작성자(블로그 닉네임) 추출
+
+        PC 는 .nick, 모바일은 .blog_author 를 쓴다. 둘 다 없으면 URL 의 blogId 로 폴백.
+        """
+        author = self._select_text(soup, NaverBlogConstants.AUTHOR_SELECTORS)
+        if author:
+            return author
+
+        for pattern in NaverBlogConstants.BLOG_ID_PATTERNS:
+            match = re.search(pattern, url)
+            if match:
+                return match.group(1)
+        return None
+
+    def extract_date(self, soup: BeautifulSoup) -> Optional[str]:
+        """
+        발행일 추출
+
+        PC(.se_publishDate)와 모바일(<p class="blog_date">)의 태그·클래스가 달라
+        태그를 고정하지 않고 선택자 우선순위로 찾는다.
+        """
+        return self._select_text(soup, NaverBlogConstants.DATE_SELECTORS)
+
+    def extract_canonical_url(self, soup: BeautifulSoup, url: str) -> str:
+        """
+        원문 URL 추출
+
+        m.blog / PostView.naver / ?enterPage= 같은 변형 대신 og:url 의 정규 주소를 쓴다.
+        """
+        og_url = soup.find('meta', {'property': 'og:url'})
+        if og_url and og_url.get('content', '').strip():
+            return og_url['content'].strip()
+        return url
 
     def get_real_url(self, url: str) -> str:
         """
@@ -264,18 +330,19 @@ class NaverBlogParser(BaseParser):
             response = requests.get(real_url, headers=self.headers)
             soup = BeautifulSoup(response.text, 'html.parser')
 
-            title = soup.find('title').text if soup.find('title') else "제목 없음"
+            title = self.extract_title(soup)
             self.logger.debug(f"Found title: {title}")
 
             content = self.parse_content(soup)
 
-            date_elem = soup.find('span', {'class': re.compile(NaverBlogConstants.DATE_CLASS_PATTERN)})
-            date = date_elem.text.strip() if date_elem else None
-            self.logger.debug(f"Found date: {date}")
+            author = self.extract_author(soup, url)
+            date = self.extract_date(soup)
+            self.logger.debug(f"Found author: {author}, date: {date}")
 
             result = {
-                'url': url,
+                'url': self.extract_canonical_url(soup, url),
                 'title': title,
+                'author': author,
                 'content': content,
                 'date': date,
                 'status': ParsingStatus.SUCCESS
@@ -288,6 +355,7 @@ class NaverBlogParser(BaseParser):
             return {
                 'url': url,
                 'title': None,
+                'author': None,
                 'content': None,
                 'date': None,
                 'status': f'{ParsingStatus.ERROR_PREFIX}{str(e)}'

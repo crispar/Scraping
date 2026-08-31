@@ -276,11 +276,14 @@ class RedditParser(BaseParser):
         Returns:
             포맷팅된 문자열
         """
-        lines = []
-        lines.append(f"Title: {result.get('title', 'N/A')}")
-        lines.append(f"Author: {result.get('author', 'N/A')}")
-        lines.append(f"Score: {result.get('score', 0)} | Comments: {len(result.get('comments', []))}")
-        lines.append(f"Posted: {result.get('created_utc', 'N/A')}")
+        lines = self.build_header_lines(
+            result,
+            date=result.get('created_utc'),
+            extra_lines=[
+                f"Score: {result.get('score', 0)} | "
+                f"Comments: {len(result.get('comments', []))}"
+            ],
+        )
         lines.append("\n" + "=" * 80 + "\n")
         lines.append("Content:\n")
         content = result.get('content', 'N/A')

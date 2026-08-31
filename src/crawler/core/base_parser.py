@@ -59,6 +59,32 @@ class BaseParser(ABC):
         """
         pass
 
+    def build_header_lines(self, result: Dict[str, Any],
+                           date: Any = None,
+                           extra_lines: Optional[List[str]] = None) -> List[str]:
+        """
+        모든 파서가 공유하는 결과 헤더 라인 생성
+
+        추출문만 복사해가도 출처를 잃지 않도록 제목 바로 아래에 원문 URL 을 박는다.
+
+        Args:
+            result: 파싱 결과 딕셔너리
+            date: 날짜를 다른 키에 담는 파서용 오버라이드 (예: reddit 의 created_utc)
+            extra_lines: 파서별 추가 헤더 라인
+
+        Returns:
+            헤더 라인 리스트
+        """
+        lines = [
+            f"Title: {result.get('title') or 'N/A'}",
+            f"URL: {result.get('url') or 'N/A'}",
+            f"Source: {self._get_logger_name()}",
+            f"Author: {result.get('author') or 'Unknown'}",
+            f"Date: {date or result.get('date') or 'Unknown'}",
+        ]
+        lines.extend(extra_lines or [])
+        return lines
+
     def format_result(self, result: Dict[str, Any]) -> str:
         """
         파싱 결과를 읽기 좋은 문자열로 포맷팅 (기본 구현)
@@ -69,14 +95,10 @@ class BaseParser(ABC):
         Returns:
             포맷팅된 문자열
         """
-        lines = []
-        lines.append(f"Title: {result.get('title', 'N/A')}")
-        lines.append(f"Source: {self._get_logger_name()}")
-        lines.append(f"Author: {result.get('author', 'Unknown')}")
-        lines.append(f"Date: {result.get('date', 'Unknown')}")
+        lines = self.build_header_lines(result)
         lines.append("\n" + "=" * 80 + "\n")
         lines.append("Content:\n")
-        lines.append(result.get('content', 'N/A'))
+        lines.append(result.get('content') or 'N/A')
         return "\n".join(lines)
 
     def parse_multiple(self, urls: List[str], output_dir: str = None) -> pd.DataFrame:
