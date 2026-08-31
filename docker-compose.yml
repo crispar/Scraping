@@ -4,6 +4,10 @@ services:
     restart: unless-stopped
     expose:
       - "5000"
+    environment:
+      - REDDIT_CLIENT_ID=${REDDIT_CLIENT_ID:-}
+      - REDDIT_CLIENT_SECRET=${REDDIT_CLIENT_SECRET:-}
+      - REDDIT_USER_AGENT=${REDDIT_USER_AGENT:-linux:content-extractor:v2.0 (personal use)}
 
   nginx:
     image: nginx:alpine

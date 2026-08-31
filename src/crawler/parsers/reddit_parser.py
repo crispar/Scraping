@@ -10,7 +10,10 @@ import re
 import pandas as pd
 from concurrent.futures import ThreadPoolExecutor
 import time
+import threading
+import xml.etree.ElementTree as ET
 from datetime import datetime
+from urllib.parse import urlparse
 import os
 import json
 import random
@@ -70,6 +73,23 @@ class RedditParser(BaseParser):
             'User-Agent': RedditConstants.USER_AGENT
         }
 
+        # OAuth 설정 (env에 키가 있으면 oauth.reddit.com 사용, 없으면 기존 공개 .json 방식)
+        self._client_id = os.environ.get('REDDIT_CLIENT_ID', '').strip()
+        self._client_secret = os.environ.get('REDDIT_CLIENT_SECRET', '').strip()
+        self._oauth_user_agent = os.environ.get(
+            'REDDIT_USER_AGENT', 'linux:content-extractor:v2.0 (personal use)'
+        )
+        self._oauth_token: Optional[str] = None
+        self._token_expiry: float = 0.0
+        self._token_lock = threading.Lock()
+        if self._client_id and self._client_secret:
+            self.logger.info("Reddit OAuth credentials found, using oauth.reddit.com API")
+        else:
+            self.logger.warning(
+                "No Reddit OAuth credentials (REDDIT_CLIENT_ID/REDDIT_CLIENT_SECRET), "
+                "falling back to public .json endpoint (may be blocked with 403)"
+            )
+
         # 파일 매니저 초기화
         self.file_manager = FileManager(self.logger)
 
@@ -84,6 +104,167 @@ class RedditParser(BaseParser):
     def _get_logger_name(self) -> str:
         """로거 이름 반환"""
         return 'reddit_parser'
+
+    def _get_oauth_token(self) -> Optional[str]:
+        """
+        OAuth 액세스 토큰 반환 (캐시 사용, 만료 5분 전 갱신)
+
+        Returns:
+            액세스 토큰 문자열, 실패 또는 키 미설정 시 None
+        """
+        if not (self._client_id and self._client_secret):
+            return None
+
+        with self._token_lock:
+            if self._oauth_token and time.time() < self._token_expiry - 300:
+                return self._oauth_token
+
+            self.logger.info("Requesting new Reddit OAuth token")
+            response = requests.post(
+                'https://www.reddit.com/api/v1/access_token',
+                auth=(self._client_id, self._client_secret),
+                data={'grant_type': 'client_credentials'},
+                headers={'User-Agent': self._oauth_user_agent},
+                timeout=15
+            )
+            if response.status_code != HTTPStatus.OK:
+                self.logger.error(
+                    f"Failed to get OAuth token: {response.status_code} {response.text[:200]}"
+                )
+                return None
+
+            data = response.json()
+            self._oauth_token = data.get('access_token')
+            self._token_expiry = time.time() + data.get('expires_in', 3600)
+            self.logger.info(f"OAuth token acquired (expires in {data.get('expires_in')}s)")
+            return self._oauth_token
+
+    def _fetch_post_json(self, url: str) -> requests.Response:
+        """
+        포스트 JSON 데이터 요청 (OAuth 우선, 미설정 시 공개 .json 폴백)
+
+        Args:
+            url: Reddit 포스트 URL
+
+        Returns:
+            requests.Response 객체
+        """
+        token = self._get_oauth_token()
+        if token:
+            # oauth.reddit.com으로 호스트 교체 후 인증 요청
+            path = urlparse(url).path.rstrip('/')
+            oauth_url = f"https://oauth.reddit.com{path}{RedditConstants.JSON_SUFFIX}"
+            self.logger.debug(f"Requesting via OAuth API: {oauth_url}")
+            return requests.get(
+                oauth_url,
+                headers={
+                    'Authorization': f'bearer {token}',
+                    'User-Agent': self._oauth_user_agent
+                },
+                params={'raw_json': 1},
+                timeout=30
+            )
+
+        # 폴백: 기존 공개 .json 엔드포인트
+        self.logger.debug(f"Requesting JSON data from {url}")
+        return requests.get(f"{url}{RedditConstants.JSON_SUFFIX}", headers=self.headers, timeout=30)
+
+    @staticmethod
+    def _atom_text(entry: ET.Element, tag: str, ns: Dict[str, str]) -> str:
+        """Atom 엔트리에서 태그 텍스트 추출"""
+        el = entry.find(f'atom:{tag}', ns)
+        return el.text if el is not None and el.text else ''
+
+    @staticmethod
+    def _html_to_text(html_str: str) -> str:
+        """HTML 콘텐츠를 일반 텍스트로 변환 (본문 div.md 우선)"""
+        soup = BeautifulSoup(html_str or '', 'html.parser')
+        md = soup.find('div', class_='md')
+        target = md if md else soup
+        return target.get_text(separator='\n', strip=True)
+
+    def _parse_via_rss(self, url: str) -> Dict[str, Any]:
+        """
+        RSS(Atom) 피드 폴백 파싱
+
+        .json이 403으로 차단된 경우 사용. 첫 엔트리=포스트, 나머지=댓글.
+        제한: 점수/추천비율 없음, 댓글 깊이·대댓글 구조 없음 (평면 목록).
+
+        Args:
+            url: Reddit 포스트 URL
+
+        Returns:
+            파싱된 포스트 데이터 (기존 결과 구조와 동일한 키)
+        """
+        rss_url = f"{url.rstrip('/')}/.rss"
+        self.logger.info(f"Falling back to RSS feed: {rss_url}")
+        response = requests.get(rss_url, headers=self.headers, timeout=30)
+        if response.status_code != HTTPStatus.OK:
+            raise Exception(f"RSS fallback failed: {response.status_code}")
+
+        ns = {'atom': 'http://www.w3.org/2005/Atom'}
+        root = ET.fromstring(response.content)
+        entries = root.findall('atom:entry', ns)
+        if not entries:
+            raise Exception("RSS fallback: no entries in feed")
+
+        post = entries[0]
+
+        def _author(entry: ET.Element) -> str:
+            el = entry.find('atom:author/atom:name', ns)
+            name = el.text if el is not None and el.text else ''
+            return name[3:] if name.startswith('/u/') else name
+
+        post_id = self._atom_text(post, 'id', ns)
+        if post_id.startswith('t3_'):
+            post_id = post_id[3:]
+
+        post_html = self._atom_text(post, 'content', ns)
+        content = self._html_to_text(post_html)
+
+        # 링크 추출: 포스트 콘텐츠 내 외부 링크 (reddit 내부 링크 제외)
+        links = []
+        post_soup = BeautifulSoup(post_html, 'html.parser')
+        for a in post_soup.find_all('a', href=True):
+            href = a['href']
+            if 'reddit.com' not in href and 'redd.it' not in href and href not in links:
+                links.append(href)
+
+        comments = []
+        for entry in entries[1:]:
+            comment_id = self._atom_text(entry, 'id', ns)
+            if comment_id.startswith('t1_'):
+                comment_id = comment_id[3:]
+            comments.append({
+                'comment_id': comment_id,
+                'parent_id': None,
+                'depth': 0,
+                'author': _author(entry),
+                'content': self._html_to_text(self._atom_text(entry, 'content', ns)),
+                'timestamp': self._atom_text(entry, 'updated', ns),
+                'score': None,
+                'status': ParsingStatus.SUCCESS
+            })
+
+        result = {
+            'url': url,
+            'post_id': post_id,
+            'title': self._atom_text(post, 'title', ns),
+            'author': _author(post),
+            'created_utc': self._atom_text(post, 'published', ns) or None,
+            'content': content,
+            'score': None,
+            'upvote_ratio': None,
+            'links': links,
+            'comments': comments,
+            'status': ParsingStatus.SUCCESS
+        }
+
+        self.logger.info(
+            f"Successfully parsed post via RSS fallback: {url} "
+            f"({len(comments)} comments, no scores/nesting)"
+        )
+        return result
 
     def format_result(self, result: Dict[str, Any]) -> str:
         """
@@ -157,9 +338,8 @@ class RedditParser(BaseParser):
                 # rate limiting 대기
                 self.rate_limiter.wait()
 
-                # 첫 번째 요청: 포스트 데이터
-                self.logger.debug(f"Requesting JSON data from {url}")
-                response = requests.get(f"{url}{RedditConstants.JSON_SUFFIX}", headers=self.headers)
+                # 첫 번째 요청: 포스트 데이터 (OAuth 우선, 폴백 시 공개 .json)
+                response = self._fetch_post_json(url)
 
                 if response.status_code == HTTPStatus.TOO_MANY_REQUESTS:
                     retry_count += 1
@@ -171,6 +351,14 @@ class RedditParser(BaseParser):
                     continue
 
                 if response.status_code != HTTPStatus.OK:
+                    # 토큰 만료/무효 가능성 → 캐시 비워서 재시도 시 새로 발급
+                    if response.status_code in (401, 403) and self._oauth_token:
+                        with self._token_lock:
+                            self._oauth_token = None
+                    # OAuth 키가 없고 공개 .json이 차단(403)된 경우 RSS 폴백
+                    elif response.status_code == 403 and not (self._client_id and self._client_secret):
+                        self.logger.warning("Public .json blocked (403), trying RSS fallback")
+                        return self._parse_via_rss(url)
                     raise Exception(f"Failed to fetch data: {response.status_code}")
 
                 data = response.json()
