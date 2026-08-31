@@ -31,6 +31,12 @@ class NaverBlogConstants:
     DATE_CLASS_PATTERN = r'date|writeDate|se_publishDate'
     MAIN_CONTAINER_CLASS_PATTERN = r'se-main-container'
 
+    # SmartEditor(SE) 컴포넌트 선택자 (본문을 문서 순서대로 순회하기 위함)
+    COMPONENT_CLASS = 'se-component'          # 각 블록(텍스트/이미지/표 등)
+    IMAGE_COMPONENT_CLASS = 'se-image'        # 이미지 계열(se-image, se-imageStrip, se-imageGroup)
+    CAPTION_CLASS_PATTERN = r'se-caption|se-module-caption'
+    IMG_LAZY_ATTR = 'data-lazy-src'           # 네이버 지연로딩 실제 src
+
     # User-Agent
     USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
 

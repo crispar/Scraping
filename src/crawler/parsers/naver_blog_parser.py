@@ -18,6 +18,10 @@ from typing import Dict, List, Any, Optional
 from crawler.core.base_parser import BaseParser
 from crawler.utils.rate_limiter import SimpleRateLimiter
 from crawler.utils.file_manager import FileManager
+from crawler.utils.vlm_client import VLMClient
+from crawler.utils.image_marker import (
+    resolve_image_src, build_image_marker, extract_image_caption,
+)
 from crawler.strategies.output_strategy import OutputStrategyFactory
 from crawler.core.config import NaverBlogConfig
 from crawler.constants import NaverBlogConstants, ParsingStatus, OutputConstants
@@ -64,6 +68,14 @@ class NaverBlogParser(BaseParser):
 
         # 출력 전략 초기화
         self.output_strategies = OutputStrategyFactory.create_naver_strategies(self.logger)
+
+        # 본문 이미지 해석용 VLM 클라이언트 (서버 미가동 시 자동 폴백)
+        self.vlm = VLMClient(request_headers={
+            'User-Agent': NaverBlogConstants.USER_AGENT,
+            'Referer': NaverBlogConstants.BASE_URL + '/',
+        })
+        # 이미지 VLM 해석 사용 여부 (단건 추출은 기본 ON, 배치는 parse_multiple_blogs 에서 OFF)
+        self.vlm_enabled = self.vlm.enabled
 
         self.logger.info(
             f"NaverBlogParser initialized with max_workers={self.config.max_workers}, "
@@ -119,6 +131,10 @@ class NaverBlogParser(BaseParser):
         """
         블로그 본문 내용 파싱
 
+        SmartEditor(SE) 컴포넌트를 문서 순서대로 순회하여 텍스트와 이미지를 함께 추출한다.
+        이미지(기사 캡처·차트·표)는 VLM 으로 내용을 해석해 본문 흐름의 제자리에 인라인 삽입한다.
+        se-main-container 가 없는 구형 포스트는 기존 방식으로 폴백(_parse_content_legacy).
+
         Args:
             soup: 블로그 페이지의 BeautifulSoup 객체
 
@@ -126,12 +142,75 @@ class NaverBlogParser(BaseParser):
             파싱된 블로그 본문 내용
         """
         try:
+            container = soup.find(
+                'div', {'class': re.compile(NaverBlogConstants.MAIN_CONTAINER_CLASS_PATTERN)}
+            )
+            if not container:
+                self.logger.debug("No se-main-container, using legacy parser")
+                return self._parse_content_legacy(soup)
+
+            # 1) 컴포넌트를 문서 순서대로 순회하며 텍스트/이미지 항목 수집
+            #    중첩된 se-component 로 인한 텍스트 중복을 막기 위해 최상위 컴포넌트만 처리
+            items = []          # ('text', str) 또는 ('image', {'url','caption'})
+            seen_img = set()
+            components = [
+                c for c in container.find_all('div', class_=NaverBlogConstants.COMPONENT_CLASS)
+                if not c.find_parent('div', class_=NaverBlogConstants.COMPONENT_CLASS)
+            ]
+            for comp in components:
+                classes = comp.get('class', [])
+                is_image = any(c.startswith(NaverBlogConstants.IMAGE_COMPONENT_CLASS) for c in classes)
+                if is_image:
+                    for img in comp.find_all('img'):
+                        url = resolve_image_src(img, NaverBlogConstants.BASE_URL)
+                        if not url or url in seen_img:
+                            continue
+                        seen_img.add(url)
+                        caption = extract_image_caption(
+                            comp, NaverBlogConstants.CAPTION_CLASS_PATTERN)
+                        items.append(('image', {'url': url, 'caption': caption}))
+                else:
+                    text = comp.get_text(strip=True)
+                    if text:
+                        items.append(('text', text))
+
+            if not items:
+                self.logger.debug("No items from se-components, using legacy parser")
+                return self._parse_content_legacy(soup)
+
+            # 2) 이미지 VLM 병렬 해석 (서버 미가동/비활성 시 빈 dict → URL 마커로 폴백)
+            img_urls = [d['url'] for kind, d in items if kind == 'image']
+            descriptions = {}
+            if self.vlm_enabled and img_urls:
+                self.logger.info(f"Describing {len(img_urls)} in-body image(s) via VLM")
+                descriptions = self.vlm.describe_images(img_urls)
+                self.logger.info(f"VLM described {len(descriptions)}/{len(img_urls)} image(s)")
+
+            # 3) 문서 순서대로 최종 본문 문자열 구성
+            content = []
+            for kind, d in items:
+                if kind == 'text':
+                    content.append(d)
+                else:
+                    content.append(build_image_marker(
+                        d['url'], caption=d['caption'],
+                        description=descriptions.get(d['url'], '')))
+
+            content_text = '\n'.join(content)
+            self.logger.debug(f"Parsed content length: {len(content_text)} characters")
+            return content_text
+        except Exception as e:
+            self.logger.error(f"Error parsing content: {str(e)}")
+            return ""
+
+    def _parse_content_legacy(self, soup: BeautifulSoup) -> str:
+        """구형 포스트용 폴백 파서 (텍스트 전용, 기존 동작 유지)."""
+        try:
             content = []
             paragraphs = soup.find_all('p', {'id': re.compile(NaverBlogConstants.PARAGRAPH_ID_PATTERN)})
             self.logger.debug(f"Found {len(paragraphs)} paragraphs with id matching 'SE-'")
 
             if not paragraphs:
-                # 백업 전략: 다른 방법으로 콘텐츠 찾기
                 self.logger.debug("No paragraphs found with primary strategy, trying backup strategy")
                 paragraphs = soup.find_all('div', {'class': re.compile(NaverBlogConstants.MAIN_CONTAINER_CLASS_PATTERN)})
 
@@ -142,10 +221,8 @@ class NaverBlogParser(BaseParser):
 
             if not content:
                 self.logger.debug("No content extracted from paragraphs, trying backup strategy")
-                # Strategy 2: Main container text
                 container = soup.find('div', {'class': re.compile(NaverBlogConstants.MAIN_CONTAINER_CLASS_PATTERN)})
                 if container:
-                    # Try to find text nodes within container
                     text_elements = container.find_all(['p', 'div', 'span'], class_=re.compile(r'se-text|se-module-text'))
                     for elem in text_elements:
                         text = elem.get_text(strip=True)
@@ -287,6 +364,13 @@ class NaverBlogParser(BaseParser):
             output_dir = self.config.output_dir
         if batch_size is None:
             batch_size = self.config.batch_size
+
+        # 배치(대량)에서는 이미지 VLM 해석을 기본 비활성화(장당 수십 초 → 대량 시 과도).
+        # 필요 시 환경변수 VLM_BATCH=1 로 강제 활성화.
+        if os.environ.get('VLM_BATCH', '0') not in ('1', 'true', 'True'):
+            if self.vlm_enabled:
+                self.logger.info("Batch mode: VLM image description disabled (set VLM_BATCH=1 to enable)")
+            self.vlm_enabled = False
 
         self.logger.info(f"Starting to parse {len(urls)} blogs with batch size {batch_size}")
         self.file_manager.ensure_directory(output_dir)

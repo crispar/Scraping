@@ -4,10 +4,28 @@ services:
     restart: unless-stopped
     expose:
       - "5000"
+    # 호스트(Windows)에서 돌아가는 GPU VLM 서버(8081) 접근용
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     environment:
       - REDDIT_CLIENT_ID=${REDDIT_CLIENT_ID:-}
       - REDDIT_CLIENT_SECRET=${REDDIT_CLIENT_SECRET:-}
       - REDDIT_USER_AGENT=${REDDIT_USER_AGENT:-linux:content-extractor:v2.0 (personal use)}
+      # 본문 이미지 VLM 해석 (Qwen3-VL @ 8081). 끄려면 VLM_ENABLED=0
+      - VLM_ENABLED=${VLM_ENABLED:-1}
+      - VLM_BASE_URL=${VLM_BASE_URL:-http://host.docker.internal:8081/v1}
+      - VLM_MAX_IMAGES=${VLM_MAX_IMAGES:-8}
+      # 동시 2장: 서버 --parallel 2 와 일치 (동시 4장은 장당 5t/s로 떨어져 타임아웃 유발)
+      - VLM_CONCURRENCY=${VLM_CONCURRENCY:-2}
+      # 이미지 1장 추론 타임아웃. 정상은 장당 ~48s(동시 2장 합계 ~60s)라 150s면
+      # 넉넉하고, 넘으면 서버 이상으로 보고 그 장은 빨리 포기해 슬롯을 비운다.
+      - VLM_TIMEOUT=${VLM_TIMEOUT:-150}
+      # 전체 이미지 해석 총 시간 상한. 넘으면 남은 이미지는 URL 마커로 폴백.
+      # 정상 8장 ≈ 240s라 360s면 안 잘리고, 서버가 느려도 작업이 이보다 길어지지 않음.
+      - VLM_TOTAL_BUDGET=${VLM_TOTAL_BUDGET:-360}
+      # 이미지 긴 변 상한(px). 이보다 큰 것만 축소해 토큰·시간 절감(작은 건 원본 유지).
+      # 실측상 1024=99.5%(무손실급)·토큰 56%↓ → 기본. 잔글씨 문서캡처 잦으면 2048, 0=비활성.
+      - VLM_MAX_DIM=${VLM_MAX_DIM:-1024}
 
   nginx:
     image: nginx:alpine

@@ -11,3 +11,4 @@ idna>=3.4
 numpy>=1.23.3
 six>=1.16.0
 cloudscraper>=1.2.71
+Pillow>=10.0.0
