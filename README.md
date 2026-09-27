@@ -141,7 +141,7 @@ URL의 **호스트명**(필요하면 경로 접두사까지)으로 파서를 고
 감지 규칙과 파서 등록은 `src/crawler/factory.py`의 **`PLATFORMS` 표 한 곳**에서 관리합니다. 순서가 곧 우선순위라서,
 더 구체적인 규칙(`naver_news`: `n.news.naver.com`, `news.naver.com/main`)을 포괄 규칙(`naver`: `naver.com`)보다 앞에 둡니다.
 
-주요 사이트: Reddit, 네이버 블로그, 네이버 뉴스, The Verge, TechCrunch, Wired, Ars Technica, CNBC, NBC News,
+주요 사이트: Reddit, 네이버 블로그, 네이버 뉴스, Daum 뉴스, The Verge, TechCrunch, Wired, Ars Technica, CNBC, NBC News,
 Fortune, Business Insider, The Economist, SCMP, Substack, Gizmodo, Engadget, Axios, 404 Media, Tom's Hardware,
 Google Research, OpenAI 등. 전체 목록은 `GET /api/parsers`로 확인할 수 있습니다.
 
@@ -318,6 +318,8 @@ JS 챌린지 사이트를 처리하려면 실제 브라우저(Playwright 등)가
   openai·axios·engadget·gamespot·marktechpost 추출을 복구했습니다.
 - VLM 클라이언트: 이미지 다운로드 **크기 상한**(스트리밍)을 두고, 기본값을 compose 실측값(동시 2장, 150초)에 맞췄습니다.
 - Docker: **비루트 실행**, `HEALTHCHECK` 추가, 불필요한 빌드 도구(build-essential 등)를 제거했습니다.
+- **Daum 뉴스 전용 파서 추가**(`v.daum.net`): 범용 파서는 언론사 로고(`<h1>`)를 제목으로 뽑고 작성자·날짜를 놓쳤습니다.
+  이제 기자 이름과 `og:regDate` 기반 날짜를 쓰고, 언론사는 `Press:` 줄에 표시합니다.
 - 테스트: `conftest.py`로 import 경로 의존을 없앴고, `testpaths=tests`로 제한했으며, 회귀 테스트를 추가했습니다(오프라인 192개).
 - 호환성 검증: 실제 사이트 36건을 수정 전후 코드로 추출해 비교했습니다. 30건은 필드와 본문 해시까지 동일하고,
   5건은 실패에서 성공으로 바뀌었으며(봇 차단 우회), 1건은 본문 없는 결과를 실패로 보고하도록 바뀌었습니다.

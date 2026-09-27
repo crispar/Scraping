@@ -120,6 +120,7 @@ PLATFORMS: List[Tuple[str, str, str, Tuple[str, ...]]] = [
     ('reddit', 'reddit_parser', 'RedditParser', ('reddit.com',)),
     ('naver_news', 'naver_news_parser', 'NaverNewsParser', ('n.news.naver.com', 'news.naver.com/main')),
     ('naver', 'naver_blog_parser', 'NaverBlogParser', ('naver.com',)),
+    ('daum_news', 'daum_news_parser', 'DaumNewsParser', ('v.daum.net',)),
     ('verge', 'verge_parser', 'VergeParser', ('theverge.com',)),
     ('fortune', 'fortune_parser', 'FortuneParser', ('fortune.com',)),
     ('nbc_news', 'nbc_news_parser', 'NBCNewsParser', ('nbcnews.com',)),

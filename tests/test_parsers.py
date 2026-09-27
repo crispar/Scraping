@@ -373,6 +373,18 @@ class TestParsers:
         assert 'YouTube' in result['title'] or 'youtube' in result['title'].lower()
         assert result['title'] != 'Unknown'
 
+    def test_daum_news_parser(self):
+        """Test Daum news parser with real URL"""
+        parser = ParserFactory.create_parser('daum_news')
+        result = parser.parse_single('https://v.daum.net/v/20260927095437316')
+
+        assert result['status'] == 'success'
+        assert result['parser'] == 'daum_news'
+        assert '삼성전자' in result['title']
+        assert result['author'] == '이상현'
+        assert result['date'].startswith('2026-09-27')
+        assert len(result['content']) > 200
+
     def test_interviewquery_parser(self):
         """Test InterviewQuery parser with real URL"""
         parser = ParserFactory.create_parser('interviewquery')
@@ -417,7 +429,7 @@ class TestExistingParsers:
             'analyticsindiamag', 'economist', 'gamespot', 'dexerto', 'nltimes', 'thedrive',
             'engadget', '404media', 'axios', 'zmescience', 'tomshardware', 'businessinsider',
             'sammobile', 'giveupinternet', 'pcgamer', 'datacenterknowledge', 'deadline',
-            'google_research', 'openai', 'thehindu', 'interviewquery', 'generic'
+            'google_research', 'openai', 'thehindu', 'interviewquery', 'daum_news', 'generic'
         ]
 
         available = ParserFactory.get_available_parsers()
