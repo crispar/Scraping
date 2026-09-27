@@ -457,3 +457,19 @@ class TestEmptyContentIsNotSuccess:
         service = self._service_with(
             monkeypatch, {'status': 'success', 'content': '', 'comments': [{'content': 'c'}]})
         assert service.extract_content('https://www.reddit.com/r/x').success is True
+
+
+class TestFavicon:
+    """브라우저 탭 아이콘 — 형제 앱(threadExtractor·TranscriptExtractor)과 같은 인라인 SVG 규칙."""
+
+    def test_index_declares_inline_svg_favicon(self, client):
+        import re
+        import urllib.parse
+        import xml.etree.ElementTree as ET
+        html = client.get('/').data.decode()
+        match = re.search(r'<link rel="icon" href="data:image/svg\+xml,([^"]+)"', html)
+        assert match, 'favicon <link> missing'
+        svg = urllib.parse.unquote(match.group(1))
+        root = ET.fromstring(svg)  # 올바른 SVG 여야 브라우저가 그린다
+        assert root.get('viewBox') == '0 0 32 32'
+        assert '#7c5cfc' in svg  # 앱 --accent-1
