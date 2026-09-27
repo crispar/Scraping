@@ -10,6 +10,7 @@ import cloudscraper
 from crawler.core.base_parser import BaseParser
 from crawler.utils.rate_limiter import SimpleRateLimiter
 from crawler.utils.proxy_config import ProxyConfig
+from crawler.utils import http_client
 from crawler.utils.article_extractor import ArticleParser
 
 
@@ -51,7 +52,8 @@ class AxiosParser(BaseParser):
             if proxies:
                 self.scraper.proxies.update(proxies)
 
-            response = self.scraper.get(url, timeout=30)
+            # cloudscraper 가 403 이면 브라우저 TLS 지문으로 재시도
+            response = http_client.fetch(url, timeout=30, session=self.scraper, proxies=proxies)
             response.raise_for_status()
 
             soup = BeautifulSoup(response.text, 'html.parser')

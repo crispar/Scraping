@@ -106,3 +106,44 @@ class TestNaverBlogMetadata:
                                      'date': None, 'content': None})
         assert 'Author: Unknown' in text and 'Date: Unknown' in text
         assert 'None' not in text
+
+
+class _FakeResponse:
+    def __init__(self, status_code=200, text='<html></html>'):
+        self.status_code = status_code
+        self.text = text
+
+    def raise_for_status(self):
+        if self.status_code >= 400:
+            import requests
+            raise requests.HTTPError(f'{self.status_code} Client Error')
+
+
+class TestNaverBlogHttp:
+    """HTTP 호출은 반드시 타임아웃을 갖고, 4xx/5xx 페이지를 성공으로 파싱하면 안 된다."""
+
+    @pytest.fixture
+    def parser(self):
+        p = ParserFactory.create_parser('naver')
+        p.vlm_enabled = False
+        return p
+
+    def test_every_request_has_timeout(self, parser, monkeypatch):
+        import crawler.parsers.naver_blog_parser as mod
+        calls = []
+
+        def fake_get(url, **kwargs):
+            calls.append(kwargs)
+            return _FakeResponse(text=MOBILE_HTML)
+
+        monkeypatch.setattr(mod.requests, 'get', fake_get)
+        parser.parse_single('https://blog.naver.com/someone/224000000000')
+        assert calls, 'no HTTP call made'
+        assert all(kw.get('timeout') for kw in calls), calls
+
+    def test_http_error_page_is_reported_as_error(self, parser, monkeypatch):
+        import crawler.parsers.naver_blog_parser as mod
+        monkeypatch.setattr(mod.requests, 'get', lambda url, **kw: _FakeResponse(404, '<html>없는 글</html>'))
+        result = parser.parse_single('https://blog.naver.com/someone/224000000000')
+        assert result['status'].startswith('error')
+        assert '404' in result['status']

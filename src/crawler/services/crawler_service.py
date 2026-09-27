@@ -3,6 +3,20 @@ from dataclasses import dataclass
 from typing import Dict, Any
 from crawler.factory import ParserFactory
 
+# 파서들이 본문을 못 찾았을 때 content 에 넣는 자리표시 문자열
+NO_CONTENT_PLACEHOLDER = 'No content found'
+
+
+def _has_body(raw_result: Dict[str, Any]) -> bool:
+    """추출 결과에 사용자에게 보여줄 본문이 있는지 판정.
+
+    레딧 링크/이미지 게시물처럼 본문은 비어 있어도 댓글이 결과인 경우는 본문 있음으로 본다.
+    """
+    content = (raw_result.get('content') or '').strip()
+    if content and content != NO_CONTENT_PLACEHOLDER:
+        return True
+    return bool(raw_result.get('comments'))
+
 
 @dataclass
 class ExtractionResult:
@@ -43,6 +57,17 @@ class CrawlerService:
             formatted_text = parser.format_result(raw_result)
 
             status = raw_result.get('status', '')
+            if status == 'success' and not _has_body(raw_result):
+                # 파서는 페이지를 받았지만 본문 선택자가 맞지 않은 경우 — 성공으로
+                # 보이면 빈 결과를 그대로 복사해 가게 되므로 실패로 알린다.
+                return ExtractionResult(
+                    success=False,
+                    message="Extraction failed: 페이지는 받았지만 본문을 찾지 못했습니다 "
+                            "(사이트 구조 변경 또는 로그인·봇 차단 페이지일 수 있음)",
+                    formatted_text=formatted_text,
+                    raw_result=raw_result,
+                    platform=platform,
+                )
             if status == 'success':
                 return ExtractionResult(
                     success=True,

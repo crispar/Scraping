@@ -16,6 +16,7 @@ import logging
 from typing import Dict, List, Any, Optional
 
 from crawler.core.base_parser import BaseParser
+from crawler.utils.proxy_config import ProxyConfig
 from crawler.utils.rate_limiter import SimpleRateLimiter
 from crawler.utils.file_manager import FileManager
 from crawler.utils.vlm_client import VLMClient
@@ -172,6 +173,14 @@ class NaverBlogParser(BaseParser):
             return og_url['content'].strip()
         return url
 
+    @staticmethod
+    def _request_options() -> Dict[str, Any]:
+        """모든 HTTP 요청 공통 옵션. 타임아웃이 없으면 응답 없는 서버에 추출 스레드가 영구히 묶인다."""
+        return {
+            'timeout': NaverBlogConstants.REQUEST_TIMEOUT,
+            'proxies': ProxyConfig.get_proxies(),
+        }
+
     def get_real_url(self, url: str) -> str:
         """
         실제 블로그 컨텐츠 URL 가져오기
@@ -183,7 +192,7 @@ class NaverBlogParser(BaseParser):
             실제 블로그 컨텐츠 URL
         """
         try:
-            response = requests.get(url, headers=self.headers)
+            response = requests.get(url, headers=self.headers, **self._request_options())
             soup = BeautifulSoup(response.text, 'html.parser')
             iframe = soup.find('iframe', id=NaverBlogConstants.IFRAME_ID)
             real_url = NaverBlogConstants.BASE_URL + iframe['src'] if iframe and iframe.get('src') else url
@@ -327,7 +336,9 @@ class NaverBlogParser(BaseParser):
         self.logger.info(f"Parsing blog: {url}")
         try:
             real_url = self.get_real_url(url)
-            response = requests.get(real_url, headers=self.headers)
+            response = requests.get(real_url, headers=self.headers, **self._request_options())
+            # 삭제·비공개 글(404 등)의 오류 페이지를 본문으로 파싱해 success 로 내보내지 않는다
+            response.raise_for_status()
             soup = BeautifulSoup(response.text, 'html.parser')
 
             title = self.extract_title(soup)

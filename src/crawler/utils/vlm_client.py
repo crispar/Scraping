@@ -8,7 +8,7 @@ Windows 호스트에서 llama.cpp(Vulkan/GPU)로 서빙되는 Qwen3-VL 8B 서버
 - 서버가 꺼져 있거나 오류가 나도 추출 자체는 절대 실패하지 않는다(graceful fallback).
   describe_* 는 실패 시 None/빈 dict 을 반환하고, 호출부는 이미지 URL 마커로 대체한다.
 - 서버는 부팅 시 자동 시작되지 않으므로 호출 전에 /health 로 가용성을 확인(1회 캐시).
-- 동시 슬롯 4개를 활용해 여러 이미지를 병렬 처리한다.
+- 서버 동시 슬롯(기본 2)만큼 여러 이미지를 병렬 처리한다.
 """
 
 import os
@@ -24,9 +24,10 @@ logger = logging.getLogger('vlm_client')
 
 # ---- 환경설정 (모두 env 로 오버라이드 가능) ----
 DEFAULT_MODEL = 'qwen3-vl:8b-instruct'   # thinking 버전 'qwen3-vl:8b' 사용 금지
-DEFAULT_TIMEOUT = int(os.environ.get('VLM_TIMEOUT', '120'))       # 이미지 1장 추론 타임아웃(초)
+# 기본값은 docker-compose 의 실측값과 같다(env 없이 도는 Windows EXE 도 같은 값을 쓰도록).
+DEFAULT_TIMEOUT = int(os.environ.get('VLM_TIMEOUT', '150'))       # 이미지 1장 추론 타임아웃(초)
 DEFAULT_MAX_IMAGES = int(os.environ.get('VLM_MAX_IMAGES', '8'))   # 포스트당 최대 해석 이미지 수
-DEFAULT_CONCURRENCY = int(os.environ.get('VLM_CONCURRENCY', '4')) # 서버 동시 슬롯 수와 일치
+DEFAULT_CONCURRENCY = int(os.environ.get('VLM_CONCURRENCY', '2')) # 서버 --parallel 과 일치 (4는 장당 속도 급락→타임아웃)
 # 전체 이미지 해석에 허용하는 총 시간(초). 이 예산을 넘으면 아직 안 끝난 이미지는
 # 기다리지 않고 버린다(호출부가 URL 마커로 폴백). 서버가 느려졌을 때 작업이
 # 8장×장당타임아웃 만큼(최악 ~20분) 늘어지는 것을 막는 wall-clock 상한.
@@ -37,7 +38,11 @@ DEFAULT_TOTAL_BUDGET = int(os.environ.get('VLM_TOTAL_BUDGET', '360'))
 # 1024면 사실상 무손실이면서 토큰 56%↓ → 블로그/뉴스/차트 기본값으로 채택.
 # 단 3000px+ 잔글씨 빼곡한 전체화면 문서 캡처가 잦으면 2048로 올릴 것. 1024 밑은 금지.
 DEFAULT_MAX_DIM = int(os.environ.get('VLM_MAX_DIM', '1024'))
+# 이미지 1장 다운로드 상한(바이트). 본문 이미지 URL 은 외부 페이지가 정하므로
+# 상한 없이 받으면 거대 파일 하나로 메모리를 소진할 수 있다.
+DEFAULT_MAX_IMAGE_BYTES = int(os.environ.get('VLM_MAX_IMAGE_BYTES', str(15 * 1024 * 1024)))
 HEALTH_TIMEOUT = 5
+_DOWNLOAD_CHUNK = 64 * 1024
 
 # base_url 후보: env 우선, 그 다음 컨테이너/로컬/기타 호스트 순으로 /health 탐색.
 # - Docker 컨테이너: host.docker.internal
@@ -75,6 +80,7 @@ class VLMClient:
                  concurrency: int = DEFAULT_CONCURRENCY,
                  total_budget: int = DEFAULT_TOTAL_BUDGET,
                  max_dim: int = DEFAULT_MAX_DIM,
+                 max_image_bytes: int = DEFAULT_MAX_IMAGE_BYTES,
                  request_headers: Optional[Dict[str, str]] = None):
         # enabled 기본값: env VLM_ENABLED (기본 '1')
         if enabled is None:
@@ -86,6 +92,7 @@ class VLMClient:
         self.concurrency = max(1, concurrency)
         self.total_budget = max(1, total_budget)
         self.max_dim = max(0, max_dim)
+        self.max_image_bytes = max(1, max_image_bytes)
         # 이미지 다운로드용 헤더(네이버 등 referer 요구 대비)
         self.request_headers = request_headers or {
             'User-Agent': 'Mozilla/5.0',
@@ -153,6 +160,29 @@ class VLMClient:
             logger.debug(f"downscale skipped: {e}")
             return content, content_type
 
+    # ---- 이미지 다운로드 ----
+    def _download_image(self, url: str):
+        """이미지를 max_image_bytes 까지만 스트리밍으로 받아 (bytes, content_type) 반환. 초과 시 None."""
+        resp = requests.get(url, headers=self.request_headers, timeout=20, stream=True)
+        try:
+            resp.raise_for_status()
+            declared = resp.headers.get('content-length', '')
+            if declared.isdigit() and int(declared) > self.max_image_bytes:
+                logger.info(f"VLM 이미지 건너뜀 (크기 {declared}B > 상한 {self.max_image_bytes}B): {url}")
+                return None
+            buf = bytearray()
+            for chunk in resp.iter_content(_DOWNLOAD_CHUNK):
+                buf.extend(chunk)
+                if len(buf) > self.max_image_bytes:
+                    logger.info(f"VLM 이미지 건너뜀 (상한 {self.max_image_bytes}B 초과): {url}")
+                    return None
+        finally:
+            resp.close()
+        content_type = resp.headers.get('content-type', 'image/png').split(';')[0]
+        if not content_type.startswith('image/'):
+            content_type = 'image/png'
+        return bytes(buf), content_type
+
     # ---- 단일 이미지 ----
     def describe_image(self, url: str, prompt: str = DEFAULT_PROMPT) -> Optional[str]:
         """이미지 URL 하나를 해석해 설명 텍스트 반환. 실패 시 None."""
@@ -162,12 +192,10 @@ class VLMClient:
         if not base:
             return None
         try:
-            img = requests.get(url, headers=self.request_headers, timeout=20)
-            img.raise_for_status()
-            content_type = img.headers.get('content-type', 'image/png').split(';')[0]
-            if not content_type.startswith('image/'):
-                content_type = 'image/png'
-            content, content_type = self._maybe_downscale(img.content, content_type)
+            downloaded = self._download_image(url)
+            if downloaded is None:
+                return None
+            content, content_type = self._maybe_downscale(*downloaded)
             b64 = base64.b64encode(content).decode()
             payload = {
                 'model': self.model,
@@ -184,9 +212,11 @@ class VLMClient:
             }
             resp = requests.post(f'{base}/chat/completions', json=payload, timeout=self.timeout)
             resp.raise_for_status()
-            text = resp.json()['choices'][0]['message']['content'].strip()
+            text = (resp.json()['choices'][0]['message'].get('content') or '').strip()
+            if not text:
+                return None
             self._cache[url] = text
-            return text or None
+            return text
         except Exception as e:
             logger.debug(f"VLM describe failed for {url}: {e}")
             return None

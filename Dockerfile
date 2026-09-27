@@ -2,13 +2,10 @@ FROM python:3.10-slim
 
 WORKDIR /app
 
-# Install system dependencies
-RUN apt-get update && \
-    apt-get install -y --no-install-recommends \
-        build-essential \
-        libxml2-dev \
-        libxslt1-dev && \
-    rm -rf /var/lib/apt/lists/*
+# lxml·numpy·pandas·Pillow 모두 manylinux 휠이 있어 컴파일러/헤더(build-essential 등)가 필요 없다.
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    LOG_DIR=/app/logs
 
 # Copy requirements and install Python dependencies
 COPY requirements.txt .
@@ -26,7 +23,16 @@ COPY static/ static/
 # Install the package (non-editable for production)
 RUN pip install --no-cache-dir .
 
+# 비루트 실행: 추출기는 임의 외부 URL 을 받아 처리하므로 컨테이너 권한을 최소화한다.
+RUN useradd --system --uid 10001 --create-home app && \
+    mkdir -p /app/logs && chown app /app/logs
+USER app
+
 EXPOSE 5000
+
+# curl 이 없는 slim 이미지라 python 으로 헬스 체크
+HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
+    CMD python -c "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:5000/api/health', timeout=4).status == 200 else 1)"
 
 # Run with gunicorn
 # 비동기 추출(job_id + 폴링) 저장소가 프로세스 로컬이므로 워커는 반드시 1개.

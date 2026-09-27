@@ -127,7 +127,7 @@ class AndroidPoliceParser(BaseParser):
                     return author[0].get('name', 'Unknown')
                 return str(author[0])
             return str(author) if author else 'Unknown'
-        except:
+        except Exception:
             return 'Unknown'
 
     def _extract_title(self, soup: BeautifulSoup) -> str:

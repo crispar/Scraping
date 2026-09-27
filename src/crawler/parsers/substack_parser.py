@@ -129,7 +129,7 @@ class SubstackParser(BaseParser):
                             'body_html': data.get('articleBody', ''),
                             'post_date': data.get('datePublished', 'Unknown')
                         }
-                except:
+                except Exception:
                     continue
 
         except Exception as e:
@@ -152,7 +152,7 @@ class SubstackParser(BaseParser):
             elif isinstance(author, str):
                 return author
 
-        except:
+        except Exception:
             pass
         return 'Unknown'
 

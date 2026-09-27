@@ -86,12 +86,9 @@ python gui_app.py
 
 **Parser Registration Flow:**
 1. Create parser file in `src/crawler/parsers/` (e.g., `thehindu_parser.py`)
-2. Import in `factory.py` line ~119
-3. Register in `factory.py` line ~164: `ParserFactory.register_parser('thehindu', TheHinduParser)`
-4. Add URL detection in `gui_app.py` ~line 556
-5. Add result formatting in `gui_app.py` ~line 995
-6. Add test in `tests/test_parsers.py` ~line 360
-7. Update expected_parsers list in `tests/test_parsers.py` ~line 404
+2. Add one row to `PLATFORMS` in `src/crawler/factory.py` — `(name, module, ClassName, (domains...))`.
+   This single table drives both registration and URL detection (hostname/subdomain match; order = priority).
+3. Add test in `tests/test_parsers.py` (network) and ideally an offline fixture test
 
 **Parse Result Structure:**
 All parsers must return dict with keys: `url`, `status`, `title`, `author`, `date`, `content`, `parser`, `timestamp`
@@ -190,16 +187,15 @@ class SiteNameParser(BaseParser, CommonParserMixin):
         return result.to_dict()  # Convert to dict for backward compatibility
 ```
 
-### Registration Checklist (Critical - Do All Steps)
+### Registration Checklist
 1. ✅ Create parser file in `src/crawler/parsers/`
-2. ✅ Import in `src/crawler/factory.py` (~line 119)
-3. ✅ Register in `src/crawler/factory.py` (~line 164)
-4. ✅ Add URL detection in `gui_app.py` detect_platform() (~line 556)
-5. ✅ Add result formatting in `gui_app.py` format_result() (~line 995)
-6. ✅ Add test case in `tests/test_parsers.py` (~line 360)
-7. ✅ Update expected_parsers list in `tests/test_parsers.py` (~line 404)
-8. ✅ Run tests: `.venv/Scripts/pytest.exe tests/test_parsers.py -k "new_parser_name"`
-9. ✅ Rebuild executable: `.venv/Scripts/pyinstaller.exe ContentExtractor_v2.spec`
+2. ✅ Add a row to `PLATFORMS` in `src/crawler/factory.py` (registration + detection in one place)
+3. ✅ Add test case in `tests/test_parsers.py`
+4. ✅ Run tests: `pytest -m "not network"` and `pytest tests/test_parsers.py -k "new_parser_name"`
+5. ✅ Rebuild: `docker compose build web && docker compose up -d web` (and the EXE if needed)
+
+Use `JsonLdExtractor.find_article(soup, types)` for JSON-LD — never hand-roll `json.loads(script.string)` loops.
+Direct `requests` calls MUST pass `timeout=`.
 
 ## Common Pitfalls
 
@@ -210,8 +206,7 @@ class SiteNameParser(BaseParser, CommonParserMixin):
 ### Parser Not Found
 **Problem**: `ValueError: Unknown parser type: 'sitename'`
 **Solutions**:
-- Check parser is imported in `factory.py` (~line 119)
-- Check parser is registered in `factory.py` (~line 164)
+- Check the parser has a row in `PLATFORMS` (`src/crawler/factory.py`)
 - Run `ParserFactory.get_available_parsers()` to see registered parsers
 
 ### Content Not Extracted

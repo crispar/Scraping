@@ -1,10 +1,10 @@
 import logging
-import json
 import requests
 from bs4 import BeautifulSoup
 from datetime import datetime
 from typing import Dict, Any, Optional
 from crawler.core.base_parser import BaseParser
+from crawler.utils.article_extractor import JsonLdExtractor
 from crawler.utils.rate_limiter import SimpleRateLimiter
 from crawler.utils.proxy_config import ProxyConfig
 
@@ -42,27 +42,19 @@ class GizmodoParser(BaseParser):
             soup = BeautifulSoup(response.text, 'html.parser')
 
             # Try JSON-LD first
-            json_ld_scripts = soup.find_all('script', type='application/ld+json')
-            for script in json_ld_scripts:
-                try:
-                    data = json.loads(script.string)
-                    if isinstance(data, list):
-                        data = data[0]
+            data = JsonLdExtractor.find_article(soup, ['NewsArticle', 'Article'])
+            if data:
+                content = self._extract_content_from_html(soup)
 
-                    if data.get('@type') in ['NewsArticle', 'Article']:
-                        content = self._extract_content_from_html(soup)
-
-                        return {
-                            'status': 'success',
-                            'url': url,
-                            'title': data.get('headline', 'Unknown'),
-                            'author': self._extract_author(data),
-                            'date': data.get('datePublished', 'Unknown'),
-                            'content': content,
-                            'parser': 'gizmodo'
-                        }
-                except json.JSONDecodeError:
-                    continue
+                return {
+                    'status': 'success',
+                    'url': url,
+                    'title': data.get('headline', 'Unknown'),
+                    'author': self._extract_author(data),
+                    'date': data.get('datePublished', 'Unknown'),
+                    'content': content,
+                    'parser': 'gizmodo'
+                }
 
             # Fallback to HTML parsing
             title = self._extract_title(soup)

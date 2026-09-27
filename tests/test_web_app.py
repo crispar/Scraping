@@ -336,8 +336,124 @@ class TestServiceIntegrity:
             assert service.detect_platform(url) == expected
             assert ParserFactory.detect_platform(url) == expected
 
+    def test_detect_platform_matches_host_not_substring(self):
+        """도메인 이름이 쿼리·경로·다른 도메인의 일부로만 등장하면 매칭하면 안 된다."""
+        cases = [
+            ('https://example.com/share?ref=reddit.com', 'generic'),
+            ('https://example.com/blog.naver/123', 'generic'),
+            ('https://notopenai.com/post', 'generic'),
+            ('https://reddit.com.evil.example/r/x', 'generic'),
+            # 정상 케이스: 서브도메인·대소문자·포트
+            ('https://old.reddit.com/r/test', 'reddit'),
+            ('https://M.BLOG.NAVER.COM/user/1', 'naver'),
+            ('https://n.news.naver.com/article/001/0001', 'naver_news'),
+            ('https://news.naver.com/main/read.naver?oid=1', 'naver_news'),
+            ('https://www.theverge.com:443/a', 'verge'),
+            ('https://research.google/blog/x', 'google_research'),
+            ('https://www.404media.co/x', '404media'),
+        ]
+        for url, expected in cases:
+            assert ParserFactory.detect_platform(url) == expected, url
+
+    def test_every_detectable_platform_is_registered(self):
+        """감지 규칙이 가리키는 플랫폼은 모두 파서로 생성 가능해야 한다."""
+        from crawler.factory import PLATFORMS
+        available = set(ParserFactory.get_available_parsers())
+        for name, _module, _cls, _domains in PLATFORMS:
+            assert name in available
+
     def test_all_parsers_registered(self):
         available = ParserFactory.get_available_parsers()
         assert len(available) >= 40
         assert 'reddit' in available
         assert 'generic' in available
+
+
+class TestInternalAddressGuard:
+    """웹 API 가 서버 내부망(도커 호스트·VLM·메타데이터 등)을 대신 조회해주면 안 된다."""
+
+    @pytest.mark.parametrize('url', [
+        'http://localhost:5000/api/health',
+        'http://127.0.0.1:8081/health',
+        'http://169.254.169.254/latest/meta-data/',
+        'http://10.0.0.5/',
+        'http://192.168.0.10/admin',
+        'http://[::1]/',
+        'http://0.0.0.0/',
+    ])
+    def test_extract_rejects_internal_addresses(self, client, url):
+        response = client.post('/api/extract', json={'url': url, 'sync': True})
+        assert response.status_code == 400
+        assert '내부' in json.loads(response.data)['error']
+
+    def test_validator_allows_public_ip(self):
+        assert URLValidator.check_public_host('http://93.184.216.34/') is None
+
+    def test_guard_can_be_disabled_by_env(self, monkeypatch):
+        monkeypatch.setenv('ALLOW_PRIVATE_URLS', '1')
+        assert URLValidator.check_public_host('http://127.0.0.1/') is None
+
+    def test_unresolvable_host_is_left_to_the_fetch(self):
+        # DNS 실패는 가드가 판단할 대상이 아니다 — 실제 요청이 실패로 보고한다.
+        assert URLValidator.check_public_host('http://no-such-host.invalid/') is None
+
+
+class TestJobQueueLimits:
+    """추출 요청마다 스레드를 무제한 생성하지 않고 대기열 상한을 둔다."""
+
+    def test_rejects_when_queue_is_full(self, monkeypatch):
+        import threading
+        import web_app
+        release = threading.Event()
+
+        def slow(self, url):
+            release.wait(5)
+            return ExtractionResult(True, 'ok', 'x', {'url': url, 'status': 'success', 'content': 'x'}, 'generic')
+
+        monkeypatch.setattr(CrawlerService, 'extract_content', slow)
+        monkeypatch.setenv('EXTRACT_WORKERS', '1')
+        monkeypatch.setenv('EXTRACT_MAX_PENDING', '2')
+        app = web_app.create_app()
+        client = app.test_client()
+        try:
+            codes = [
+                client.post('/api/extract', json={'url': f'https://example.com/{i}'}).status_code
+                for i in range(3)
+            ]
+            assert codes == [202, 202, 429]
+        finally:
+            release.set()
+
+
+class TestEmptyContentIsNotSuccess:
+    """파서가 status=success 를 줘도 본문이 비었으면 사용자에게 성공으로 보이면 안 된다."""
+
+    @staticmethod
+    def _service_with(monkeypatch, raw):
+        class FakeParser:
+            def parse_single(self, url):
+                return dict(raw, url=url)
+
+            def format_result(self, result):
+                return 'formatted'
+
+        monkeypatch.setattr(ParserFactory, 'create_parser', staticmethod(lambda *_a, **_k: FakeParser()))
+        return CrawlerService()
+
+    @pytest.mark.parametrize('content', ['', '   ', None, 'No content found'])
+    def test_empty_body_is_failure(self, monkeypatch, content):
+        service = self._service_with(monkeypatch, {'status': 'success', 'title': 'T', 'content': content})
+        result = service.extract_content('https://example.com/a')
+        assert result.success is False
+        assert '본문' in result.message
+        assert result.formatted_text == 'formatted'
+
+    def test_body_present_is_success(self, monkeypatch):
+        service = self._service_with(monkeypatch, {'status': 'success', 'content': 'hello'})
+        assert service.extract_content('https://example.com/a').success is True
+
+    def test_link_post_with_comments_is_success(self, monkeypatch):
+        # 레딧 링크/이미지 게시물: 본문은 비어도 댓글이 추출 결과다.
+        service = self._service_with(
+            monkeypatch, {'status': 'success', 'content': '', 'comments': [{'content': 'c'}]})
+        assert service.extract_content('https://www.reddit.com/r/x').success is True

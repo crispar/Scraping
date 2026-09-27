@@ -12,7 +12,7 @@ import pandas as pd
 import requests
 from bs4 import BeautifulSoup
 from crawler.utils.logger_config import setup_logger
-from crawler.utils.proxy_config import ProxyConfig
+from crawler.utils import http_client
 from crawler.utils.article_extractor import ArticleParser
 
 
@@ -170,12 +170,8 @@ class BaseParser(ABC):
         if headers:
             default_headers.update(headers)
 
-        response = requests.get(
-            url,
-            headers=default_headers,
-            timeout=timeout,
-            proxies=ProxyConfig.get_proxies()
-        )
+        # 403(봇 차단)이면 브라우저 TLS 지문으로 한 번 재시도 (utils/http_client.py)
+        response = http_client.fetch(url, headers=default_headers, timeout=timeout)
         response.raise_for_status()
 
         return BeautifulSoup(response.text, 'html.parser')

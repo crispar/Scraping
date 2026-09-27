@@ -25,6 +25,7 @@ class NaverBlogConstants:
     """네이버 블로그 관련 상수"""
     BASE_URL = 'https://blog.naver.com'
     IFRAME_ID = 'mainFrame'
+    REQUEST_TIMEOUT = 20  # 초 (연결+응답 읽기)
 
     # HTML 선택자
     PARAGRAPH_ID_PATTERN = r'^SE-'

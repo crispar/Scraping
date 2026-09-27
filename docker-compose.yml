@@ -11,6 +11,11 @@ services:
       - REDDIT_CLIENT_ID=${REDDIT_CLIENT_ID:-}
       - REDDIT_CLIENT_SECRET=${REDDIT_CLIENT_SECRET:-}
       - REDDIT_USER_AGENT=${REDDIT_USER_AGENT:-linux:content-extractor:v2.0 (personal use)}
+      # 동시 추출 작업 수 / 대기열 상한(넘으면 429). VLM 슬롯을 나눠 쓰므로 워커는 작게.
+      - EXTRACT_WORKERS=${EXTRACT_WORKERS:-2}
+      - EXTRACT_MAX_PENDING=${EXTRACT_MAX_PENDING:-20}
+      # 1이면 사설/루프백 주소 추출 허용 (기본: 차단 — 내부망 조회 방지)
+      - ALLOW_PRIVATE_URLS=${ALLOW_PRIVATE_URLS:-0}
       # 본문 이미지 VLM 해석 (Qwen3-VL @ 8081). 끄려면 VLM_ENABLED=0
       - VLM_ENABLED=${VLM_ENABLED:-1}
       - VLM_BASE_URL=${VLM_BASE_URL:-http://host.docker.internal:8081/v1}
