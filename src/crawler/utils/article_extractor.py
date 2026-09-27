@@ -7,52 +7,38 @@ from various news and blog websites.
 import json
 import logging
 import html
-from typing import Dict, Any, Iterable, Iterator, Optional, List
+from typing import Dict, Any, Iterable, Optional, List
 from bs4 import BeautifulSoup, Tag
-
-
-ARTICLE_TYPES = ('NewsArticle', 'Article', 'BlogPosting')
 
 
 class JsonLdExtractor:
     """Extracts metadata from JSON-LD structured data"""
 
     @staticmethod
-    def iter_nodes(soup: BeautifulSoup) -> Iterator[Dict[str, Any]]:
+    def find_top_level_article(soup: BeautifulSoup, types: Iterable[str]) -> Optional[Dict[str, Any]]:
         """
-        페이지의 모든 ld+json 블록에서 객체 노드를 문서 순서대로 산출.
+        ld+json 블록마다 최상위 노드(배열이면 첫 원소) 하나만 보고, @type 이 types 중
+        하나인 첫 노드를 반환 (없으면 None).
 
-        배열·@graph 를 평탄화하고, 비어 있거나 깨진 블록은 건너뛴다.
-        블록 하나가 이상하다고 나머지 블록이나 페이지 파싱이 중단되면 안 된다.
+        사이트 파서들이 쓰던 선택 규칙을 그대로 따른다. @graph 안이나 배열의 두 번째
+        이후 원소는 일부러 보지 않는다 — 그런 페이지는 원래 HTML 추출로 폴백했고,
+        @graph 의 author 는 흔히 @id 참조뿐이라 읽으면 작성자가 'Unknown' 으로 퇴행한다
+        (예: towardsdatascience). 달라진 점은 빈 블록·빈 배열·깨진 JSON 을 만나면
+        예외로 파싱 전체를 끝내지 않고 그 블록만 건너뛴다는 것뿐이다.
         """
+        wanted = set(types)
         for script in soup.find_all('script', type='application/ld+json'):
             try:
                 data = json.loads(script.string or '')
             except (json.JSONDecodeError, TypeError):
                 continue
-            stack = [data]
-            while stack:
-                node = stack.pop(0)
-                if isinstance(node, list):
-                    stack[:0] = node
-                elif isinstance(node, dict):
-                    if isinstance(node.get('@graph'), list):
-                        stack[:0] = node['@graph']
-                    yield node
-
-    @staticmethod
-    def find_article(soup: BeautifulSoup, types: Iterable[str]) -> Optional[Dict[str, Any]]:
-        """
-        @type 이 types 중 하나인 첫 JSON-LD 노드 반환 (없으면 None).
-
-        @type 은 문자열 또는 문자열 배열(["Article", "NewsArticle"])일 수 있다.
-        """
-        wanted = set(types)
-        for node in JsonLdExtractor.iter_nodes(soup):
-            node_type = node.get('@type')
-            node_types = node_type if isinstance(node_type, list) else [node_type]
-            if wanted.intersection(t for t in node_types if isinstance(t, str)):
-                return node
+            if isinstance(data, list):
+                data = data[0] if data else None
+            if not isinstance(data, dict):
+                continue
+            node_type = data.get('@type')
+            if isinstance(node_type, str) and node_type in wanted:
+                return data
         return None
 
     @staticmethod
@@ -67,21 +53,50 @@ class JsonLdExtractor:
         Returns:
             Dict with keys: title, author, date, content (or None if not found)
         """
-        data = JsonLdExtractor.find_article(soup, ARTICLE_TYPES)
-        if data is None:
-            return None
+        json_ld_scripts = soup.find_all('script', type='application/ld+json')
 
-        title = data.get('headline') or data.get('name')
-        author = JsonLdExtractor._extract_author(data)
-        content = data.get('articleBody')
-        if logger:
-            logger.info("Successfully extracted data from JSON-LD")
-        return {
-            'title': html.unescape(title) if isinstance(title, str) else None,
-            'author': html.unescape(author) if isinstance(author, str) else None,
-            'date': data.get('datePublished') or data.get('dateCreated') or data.get('dateModified'),
-            'content': html.unescape(content) if isinstance(content, str) else None,
-        }
+        for script in json_ld_scripts:
+            try:
+                data = json.loads(script.string)
+
+                # Handle @graph structure
+                if isinstance(data, dict) and '@graph' in data:
+                    for item in data['@graph']:
+                        if item.get('@type') in ['NewsArticle', 'Article', 'BlogPosting']:
+                            data = item
+                            break
+
+                # Handle list structure
+                elif isinstance(data, list):
+                    for item in data:
+                        if isinstance(item, dict) and item.get('@type') in ['NewsArticle', 'Article', 'BlogPosting']:
+                            data = item
+                            break
+
+                # Check if we have an article type
+                if isinstance(data, dict) and data.get('@type') in ['NewsArticle', 'Article', 'BlogPosting']:
+                    title = data.get('headline') or data.get('name')
+                    author = JsonLdExtractor._extract_author(data)
+                    content = data.get('articleBody')
+
+                    result = {
+                        'title': html.unescape(title) if title else None,
+                        'author': html.unescape(author) if author else None,
+                        'date': data.get('datePublished') or data.get('dateCreated') or data.get('dateModified'),
+                        'content': html.unescape(content) if content else None
+                    }
+
+                    if logger:
+                        logger.info("Successfully extracted data from JSON-LD")
+
+                    return result
+
+            except (json.JSONDecodeError, AttributeError, TypeError) as e:
+                if logger:
+                    logger.debug(f"Failed to parse JSON-LD: {e}")
+                continue
+
+        return None
 
     @staticmethod
     def _extract_author(data: Dict) -> Optional[str]:

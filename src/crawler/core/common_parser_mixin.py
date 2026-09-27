@@ -273,7 +273,7 @@ class CommonParserMixin:
                 ('div', {'class': 'post-content'}),
                 ('div', {'class': 'article-body'}),
                 ('main', {}),
-                '[role="main"]',  # CSS 선택자는 튜플이 아닌 문자열로 (아래 select_one 분기)
+                ('[role="main"]', {}),
             ]
 
         # Try each selector
@@ -283,7 +283,7 @@ class CommonParserMixin:
                 if attrs:
                     container = soup.find(tag, attrs)
                 else:
-                    container = soup.find(tag)
+                    container = soup.find(tag) if isinstance(tag, str) else soup.select_one(tag)
             else:
                 # String selector (CSS)
                 container = soup.select_one(tag_selector)

@@ -52,7 +52,7 @@ class ArsTechnicaParser(BaseParser):
             soup = BeautifulSoup(response.text, 'html.parser')
 
             # Try JSON-LD first
-            data = JsonLdExtractor.find_article(soup, ['NewsArticle', 'Article'])
+            data = JsonLdExtractor.find_top_level_article(soup, ['NewsArticle', 'Article'])
             if data:
                 content = self._extract_content_from_html(soup)
 

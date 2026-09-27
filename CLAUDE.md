@@ -194,7 +194,8 @@ class SiteNameParser(BaseParser, CommonParserMixin):
 4. ✅ Run tests: `pytest -m "not network"` and `pytest tests/test_parsers.py -k "new_parser_name"`
 5. ✅ Rebuild: `docker compose build web && docker compose up -d web` (and the EXE if needed)
 
-Use `JsonLdExtractor.find_article(soup, types)` for JSON-LD — never hand-roll `json.loads(script.string)` loops.
+Use `JsonLdExtractor.find_top_level_article(soup, types)` for JSON-LD — never hand-roll `json.loads(script.string)` loops.
+It intentionally ignores `@graph` (reading it regressed towardsdatascience author to 'Unknown').
 Direct `requests` calls MUST pass `timeout=`.
 
 ## Common Pitfalls

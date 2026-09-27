@@ -181,8 +181,10 @@ ExtractionResult(success, message, formatted_text, raw_result, platform)
 `content`, `parser` 키를 가진 dict를 반환합니다. `status == 'success'`여도 `content`가 비었거나
 `"No content found"`면(단, Reddit처럼 `comments`가 있는 경우는 제외) 서비스 계층이 실패로 판정합니다.
 
-**JSON-LD**: 여러 블록·배열·`@graph`·배열형 `@type`을 모두 다룰 수 있도록 `JsonLdExtractor.find_article(soup, types)` /
-`iter_nodes(soup)`를 쓰세요. 비어 있거나 깨진 ld+json 블록은 건너뜁니다. 파서마다 `json.loads` 루프를 따로 두지 마세요.
+**JSON-LD**: 사이트 파서에서 JSON-LD를 직접 읽을 때는 `JsonLdExtractor.find_top_level_article(soup, types)`를 쓰세요.
+비어 있거나 깨진 ld+json 블록은 건너뛰고, 블록마다 최상위 노드만 봅니다. `@graph` 안은 일부러 읽지 않습니다.
+`@graph`의 author는 흔히 `@id` 참조뿐이라, 읽으면 HTML에서 찾던 작성자가 `Unknown`으로 퇴행합니다
+(towardsdatascience에서 실측). 파서마다 `json.loads` 루프를 따로 두지 마세요.
 
 ---
 
@@ -310,13 +312,15 @@ JS 챌린지 사이트를 처리하려면 실제 브라우저(Playwright 등)가
 - 네이버 블로그 파서: 모든 요청에 **타임아웃**(20초)·프록시를 적용하고, 404 등 **HTTP 오류 페이지를 성공으로 파싱하던 문제**를 수정했습니다.
 - JSON-LD 루프가 복사돼 있던 8개 파서(analyticsindiamag, arstechnica, economist, gizmodo, marktechpost, samaltman,
   techafricanews, towardsdatascience)는 빈 배열이나 빈 블록 하나만 있어도 추출 전체가 error로 끝났습니다.
-  이를 공용 `JsonLdExtractor.find_article`로 교체하고, `@graph`와 배열형 `@type`도 지원하게 했습니다.
+  이를 공용 `JsonLdExtractor.find_top_level_article`로 교체했습니다. 노드 선택 규칙은 기존과 동일합니다.
 - 로거: 로그 폴더에 쓸 수 없으면 파서 생성이 실패하던 문제를 수정했습니다(콘솔로 폴백). `LOG_DIR`, `LOG_TO_FILE`을 추가했습니다.
 - **봇 차단 자동 우회**: 403이면 `curl_cffi`로 크롬 TLS 지문을 흉내 내 재시도합니다(`utils/http_client.py`).
   openai·axios·engadget·gamespot·marktechpost 추출을 복구했습니다.
 - VLM 클라이언트: 이미지 다운로드 **크기 상한**(스트리밍)을 두고, 기본값을 compose 실측값(동시 2장, 150초)에 맞췄습니다.
 - Docker: **비루트 실행**, `HEALTHCHECK` 추가, 불필요한 빌드 도구(build-essential 등)를 제거했습니다.
-- 테스트: `conftest.py`로 import 경로 의존을 없앴고, `testpaths=tests`로 제한했으며, 회귀 테스트를 추가했습니다(오프라인 184개).
+- 테스트: `conftest.py`로 import 경로 의존을 없앴고, `testpaths=tests`로 제한했으며, 회귀 테스트를 추가했습니다(오프라인 192개).
+- 호환성 검증: 실제 사이트 36건을 수정 전후 코드로 추출해 비교했습니다. 30건은 필드와 본문 해시까지 동일하고,
+  5건은 실패에서 성공으로 바뀌었으며(봇 차단 우회), 1건은 본문 없는 결과를 실패로 보고하도록 바뀌었습니다.
 
 ### 2026-07 — 비동기 추출·VLM
 - 추출 API 비동기화(job_id + 폴링), 네이버 블로그 본문 이미지 VLM 해석, 이미지 다운스케일 상한·전체 시간 예산.
